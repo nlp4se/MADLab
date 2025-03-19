@@ -21,14 +21,24 @@ OPENAI_API_KEY=your_openai_api_key_here
 pip install -r requirements.txt
 ```
 
-4. Create assistant:
+4. Create assistants:
 
 ```
-python -m code.llm.openai.create_assistant_openai
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name discussant1 --prompt_file_path .\data\prompts\discussant\system-prompt.txt
+
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name discussant2 --prompt_file_path .\data\prompts\discussant\system-prompt.txt
+
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name coordinator --prompt_file_path .\data\prompts\coordinator\system-prompt.txt
 ```
 
-5. Use assistant:
+5. Use assistants:
 
 ```
-python.exe -m code.llm.openai.ask_assistant_openai 
+python.exe -m code.llm.openai.ask_assistant_openai --assistant_name discussant1
+```
+
+6. Example of coordination (Summarization):
+
+```
+python.exe -m code.llm.coordinator --temperature 1
 ```

@@ -94,7 +94,7 @@ def main():
                        default='gpt-4o',
                        help='Model to use (e.g., gpt-4o)')
     parser.add_argument('--prompt_file',
-                        default='data/prompts/user-prompt.txt',
+                        default='data/prompts/discussant/user-prompt.txt',
                        help='Path to the file containing the prompt')
     
     args = parser.parse_args()

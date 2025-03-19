@@ -1,0 +1,5 @@
+Please analyze and synthesize the following responses from different assistants:
+
+{assistant_responses}
+
+Please provide a comprehensive synthesis of these responses, highlighting key agreements, differences, and unique insights.
