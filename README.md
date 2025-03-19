@@ -42,3 +42,9 @@ python.exe -m code.llm.openai.ask_assistant_openai --assistant_name discussant1
 ```
 python.exe -m code.llm.coordinator --temperature 1
 ```
+
+Using a classify requirement task (example):
+
+```
+python.exe -m code.llm.coordinator --temperature 1 --discussant_prompt_file .\data\prompts\discussant\classify-requirement.txt
+```
