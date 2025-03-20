@@ -92,11 +92,12 @@ python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr.
 Multi-class
 
 ```
-python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr-multiclass.csv --output_folder .\data\output\baseline\multiclass\ --batch_size 10 --assistant_name persona_classifier_multiclass --model gpt-4o
+python.exe -m code.evaluation.metrics --input .\data\output\baseline\multiclass\nfr.csv --output .\data\evaluation\multiclass
 ```
 
 or binary
 
 ```
-python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr.csv --output_folder .\data\output\baseline\binary\ --batch_size 10 --assistant_name persona_classifier_binary --model gpt-4o
+python.exe -m code.evaluation.metrics --input .\data\output\baseline\binary\nfr.csv --output .\data\evaluation\binary
 ```
+
