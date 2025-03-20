@@ -1,0 +1,16 @@
+{
+  "name": "requirements-schema",
+  "description": "A schema for classifying requirements into categories",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "classes": {
+        "type": "array",
+        "items": {
+            "type": "string",
+            "enum": ["F", "A", "L", "LF", "MN", "O", "PE", "SC", "SE", "US", "FT", "PO"]
+        }
+      }
+    }
+  }
+}

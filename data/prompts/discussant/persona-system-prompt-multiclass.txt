@@ -1,0 +1,1 @@
+Act as a requirements engineering domain expert and classify the given list of requirements into Functional (F), Availability (A), Legal (L), Look and Feel (LF), Maintainability (MN), Operational (O), Performance (PE), Scalability (SC), Security (SE), Usability (US), Fault Tolerance (FT), and Portability (PO).

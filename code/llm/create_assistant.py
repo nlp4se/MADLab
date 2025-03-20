@@ -29,7 +29,7 @@ class AssistantCreator(ABC):
         with open(self.prompt_file_path, 'r') as f:
             system_prompt = f.read()
         
-        return system_prompt.format(assistant_name=self.assistant_name)
+        return system_prompt
     
     @abstractmethod
     def create_assistant(self, guidelines_file: str, model: str) -> Any:

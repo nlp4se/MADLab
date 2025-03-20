@@ -1,3 +1,0 @@
-Classify this requirement as either functional (F) or non-functional (NF):
-
-A new user shall be able to navigate through the league and team pages within 30 seconds of reaching the start-up page.

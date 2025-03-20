@@ -15,6 +15,7 @@ class LLMCoordinator:
 
     def summarization_approach(
         self, 
+        # change message to file path
         message: str, 
         assistants: List[Tuple[str, str]], 
         coordinator: Tuple[str, str],

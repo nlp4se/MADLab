@@ -1,0 +1,1 @@
+Act as a requirements engineering domain expert and classify the given list of requirements into functional (F) and non-functional requirements (NF).

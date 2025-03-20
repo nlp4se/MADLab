@@ -43,8 +43,60 @@ python.exe -m code.llm.openai.ask_assistant_openai --assistant_name discussant1
 python.exe -m code.llm.coordinator --temperature 1
 ```
 
-Using a classify requirement task (example):
+## Requirements classification with Persona pattern
+
+1. Create the assistant.
+
+Multi-class
 
 ```
-python.exe -m code.llm.coordinator --temperature 1 --discussant_prompt_file .\data\prompts\discussant\classify-requirement.txt
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name persona_classifier_multiclass --prompt_file_path .\data\prompts\discussant\persona-system-prompt-multiclass.txt --schema_file_path .\data\prompts\discussant\requirements-schema-multiclass.json
+```
+
+or binary
+
+```
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name persona_classifier_binary --prompt_file_path .\data\prompts\discussant\persona-system-prompt-binary.txt --schema_file_path .\data\prompts\discussant\requirements-schema-binary.json   
+```
+
+2. Test the assistant
+
+Multi-class
+
+```
+python.exe -m code.llm.openai.ask_assistant_openai --assistant_name persona_classifier_multiclass --prompt_file .\data\prompts\discussant\persona-user-prompt.txt
+```
+
+or binary
+
+```
+python.exe -m code.llm.openai.ask_assistant_openai --assistant_name persona_classifier_binary --prompt_file .\data\prompts\discussant\persona-user-prompt.txt
+```
+
+3. Get the baseline ground-truth
+
+Multi-class
+
+```
+python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr-multiclass.csv --output_folder .\data\output\baseline\multiclass\ --batch_size 10 --assistant_name persona_classifier_multiclass --model gpt-4o
+```
+
+or binary
+
+```
+python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr.csv --output_folder .\data\output\baseline\binary\ --batch_size 10 --assistant_name persona_classifier_binary --model gpt-4o
+```
+
+4. Get evaluation results
+
+Multi-class
+
+```
+python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr-multiclass.csv --output_folder .\data\output\baseline\multiclass\ --batch_size 10 --assistant_name persona_classifier_multiclass --model gpt-4o
+```
+
+or binary
+
+```
+python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr.csv --output_folder .\data\output\baseline\binary\ --batch_size 10 --assistant_name persona_classifier_binary --model gpt-4o
 ```
