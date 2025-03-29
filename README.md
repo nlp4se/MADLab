@@ -34,13 +34,13 @@ python.exe -m code.llm.openai.create_assistant_openai --assistant_name coordinat
 5. Use assistants:
 
 ```
-python.exe -m code.llm.openai.ask_assistant_openai --assistant_name discussant1
+python.exe -m code.llm.openai.ask_assistant_openai --assistant_name discussant1 --promp_file_path .\data\prompts\discussant\requirement-example-prompt.txt
 ```
 
 6. Example of coordination (Summarization):
 
 ```
-python.exe -m code.llm.coordinator --temperature 1
+python.exe -m code.llm.coordinator --input .\data\datasets\PROMISE\nfr-small.csv --output .\data\output\judge\binary\nfr-small.csv --assistants-file .\data\config\assistants.json --judge-file .\data\config\judge.json --temperature 0
 ```
 
 ## Requirements classification with Persona pattern
@@ -92,7 +92,7 @@ python.exe -m code.evaluation.baseline --input_path .\data\datasets\PROMISE\nfr.
 Multi-class
 
 ```
-python.exe -m code.evaluation.metrics --input .\data\output\baseline\multiclass\nfr.csv --output .\data\evaluation\multiclass
+python.exe -m code.evaluation.metrics --input .\data\output\baseline\multiclass\nfr-multiclass.csv --output .\data\evaluation\multiclass
 ```
 
 or binary
@@ -101,3 +101,28 @@ or binary
 python.exe -m code.evaluation.metrics --input .\data\output\baseline\binary\nfr.csv --output .\data\evaluation\binary
 ```
 
+## Requirements classification with Judge pattern
+
+Create the functional (F) debater assistant:
+
+```
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name functional-debater --prompt_file_path .\data\prompts\discussant\functional-debater-prompt.txt   
+```
+
+Create the non-functional (NF) debater assistant:
+
+```
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name non-functional-debater --prompt_file_path .\data\prompts\discussant\non-functional-debater-prompt.txt                     
+```
+
+Create the judge assistant:
+
+```
+python.exe -m code.llm.openai.create_assistant_openai --assistant_name judge-debater --prompt_file_path .\data\prompts\coordinator\judge-prompt.txt --schema_file_path .\data\prompts\coordinator\requirements-schema-binary.json    
+```
+
+Run the Judge discussion pattern (small dataset):
+
+```
+python.exe -m code.llm.coordinator --input .\data\datasets\PROMISE\nfr-small.csv --output .\data\output\judge\binary\nfr-small.csv --assistants-file .\data\config\assistants.json --judge-file .\data\config\judge.json --temperature 0   
+```

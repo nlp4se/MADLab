@@ -93,7 +93,7 @@ def main():
     parser.add_argument('--model', 
                        default='gpt-4o',
                        help='Model to use (e.g., gpt-4o)')
-    parser.add_argument('--prompt_file',
+    parser.add_argument('--prompt_file_path',
                         default='data/prompts/discussant/user-prompt.txt',
                        help='Path to the file containing the prompt')
     
@@ -101,10 +101,10 @@ def main():
     
     # Read prompt from file
     try:
-        with open(args.prompt_file, 'r') as file:
+        with open(args.prompt_file_path, 'r') as file:
             message = file.read().strip()
     except FileNotFoundError:
-        print(f"Error: Prompt file '{args.prompt_file}' not found.")
+        print(f"Error: Prompt file '{args.prompt_file_path}' not found.")
         return
     except Exception as e:
         print(f"Error reading prompt file: {e}")

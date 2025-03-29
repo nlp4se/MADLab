@@ -1,4 +1,4 @@
 [
-    ["discussant1", "gpt-4o"],
-    ["discussant2", "gpt-4o"]
+    ["functional-debater", "gpt-4o"],
+    ["non-functional-debater", "gpt-4o"]
 ]

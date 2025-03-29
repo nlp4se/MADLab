@@ -4,12 +4,13 @@
   "schema": {
     "type": "object",
     "properties": {
-      "classes": {
-        "type": "array",
-        "items": {
-            "type": "string",
-            "enum": ["F", "NF"]
-        }
+      "class": {
+        "type": "string",
+        "enum": ["F", "NF"]
+      },
+      "justification": {
+        "type": "string",
+        "description": "Explanation for why the requirement is classified as functional or non-functional based on the discussion with the debaters."
       }
     }
   }
