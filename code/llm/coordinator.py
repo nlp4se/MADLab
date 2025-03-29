@@ -92,10 +92,18 @@ class LLMCoordinator:
         output_file: Path,
         assistants: List[Tuple[str, str]],
         judge: Tuple[str, str],
-        temperature: float = 0
+        temperature: float = 0,
+        n: int = None
     ) -> None:
         """Process entire dataset through assistants and judge."""
         df = pd.read_csv(input_file)
+        
+        # If n is specified, sample n requirements from each type
+        if n is not None:
+            df = (df.groupby('type', group_keys=False)
+                   .apply(lambda x: x.sample(min(n, len(x))))
+                   .reset_index(drop=True))
+            
         df['judge'] = ''
         total_metrics = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
@@ -131,6 +139,7 @@ def main():
     parser.add_argument('--assistants-file', type=Path, required=True, help='JSON file with assistant configs')
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
+    parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
     args = parser.parse_args()
 
     # Initialize coordinator
@@ -147,7 +156,8 @@ def main():
         args.output,
         assistants,
         judge,
-        args.temperature
+        args.temperature,
+        n=args.n
     )
 
 if __name__ == "__main__":
