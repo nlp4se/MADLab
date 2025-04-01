@@ -1,4 +1,4 @@
-requirement,type,assistant_label
+requirement,type,judge
 The system shall have a MDI form that allows for the viewing of the graph and the data table.,F,F
 The system shall display Events in a vertical table by time.,F,F
 The system shall display the Events in a graph by time.,F,F

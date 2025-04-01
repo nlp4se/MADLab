@@ -45,7 +45,7 @@ def main():
     df = pd.read_csv(args.input)
     
     # Compute metrics
-    metrics = compute_metrics(df['type'], df['assistant_label'])
+    metrics = compute_metrics(df['type'], df['judge'])
     
     # Create DataFrame for metrics
     metrics_rows = []
