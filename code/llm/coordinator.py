@@ -76,7 +76,7 @@ class LLMCoordinator:
         try:
             decision_obj = json.loads(raw_decision)
             decision = decision_obj['class']
-            justification = decision_obj['justification']
+            #justification = decision_obj['justification']
         except (json.JSONDecodeError, KeyError) as e:
             raise Exception(f"Invalid judge response format: {raw_decision}") from e
 
@@ -84,7 +84,8 @@ class LLMCoordinator:
         for key in total_metrics:
             total_metrics[key] += judge_metrics[key]
 
-        return decision, justification, total_metrics
+        #return decision, justification, total_metrics
+        return decision, total_metrics
 
     def process_dataset(
         self,
@@ -99,6 +100,9 @@ class LLMCoordinator:
         df['judge'] = ''
         total_metrics = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
 
+        # Write header to output file
+        df.head(0).to_csv(output_file, index=False)
+
         # Add progress bar
         for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing requirements"):
             requirement = row['requirement']
@@ -106,22 +110,23 @@ class LLMCoordinator:
                 continue
 
             try:
-                decision, justification, metrics = self.judge_approach(
+                decision, metrics = self.judge_approach(
                     requirement,
                     assistants,
                     judge,
                     temperature
                 )
                 df.at[idx, 'judge'] = decision
-                df.at[idx, 'justification'] = justification
                 # Accumulate metrics
                 for key in total_metrics:
                     total_metrics[key] += metrics[key]
 
+                # Save this row to the output file
+                df.iloc[[idx]].to_csv(output_file, mode='a', header=False, index=False)
+
             except Exception as e:
                 print(f"Error processing requirement {idx}: {str(e)}")
 
-        df.to_csv(output_file, index=False)
         print("\nTotal token usage:", total_metrics)
 
 def main():
