@@ -6,6 +6,7 @@ import pandas as pd
 from pathlib import Path
 import json
 from tqdm import tqdm
+import time
 
 from .openai.ask_assistant_openai import OpenAIAssistantCaller
 
@@ -21,28 +22,26 @@ class LLMCoordinator:
         requirement: str,
         assistants: List[Tuple[str, str]],
         judge: Tuple[str, str],
-        temperature: float = 0
+        temperature: float = 0,
+        n_iterations: int = 0
     ) -> Tuple[str, Dict]:
-        """
-        Process a single requirement through assistants and judge.
-        
-        Args:
-            requirement: The requirement text
-            assistants: List of (assistant_name, model) pairs
-            judge: Tuple of (judge_name, model)
-            temperature: Temperature for generation
-            
-        Returns:
-            Tuple of (judge_decision, metrics)
-        """
+        """Process a single requirement through assistants and judge."""
+        start_time = time.time()
         responses = []
         total_metrics = {
             'prompt_tokens': 0,
             'completion_tokens': 0,
-            'total_tokens': 0
+            'total_tokens': 0,
+            'execution_time': 0
         }
 
-        # Get responses from assistants
+        print("\n" + "="*80)
+        print(f"Processing requirement: {requirement}\n")
+
+        # Initial responses from assistants
+        print("Initial round responses:")
+        print("-"*40)
+        initial_responses = []
         for assistant_name, model in assistants:
             response, metrics = self.caller.send_message(
                 requirement,
@@ -50,42 +49,84 @@ class LLMCoordinator:
                 model=model,
                 temperature=temperature
             )
-            responses.append((assistant_name, response))
+            print(f"\nAssistant '{assistant_name}':\n{response}")
+            initial_responses.append((assistant_name, response))
+            responses.append((assistant_name, response, 0))
             
-            # Accumulate metrics
             for key in total_metrics:
-                total_metrics[key] += metrics[key]
+                if key != 'execution_time':
+                    total_metrics[key] += metrics[key]
 
-        # Prepare input for judge
-        assistant_responses = "\n\n".join([
-            f"Assistant '{name}' response:\n{response}"
-            for name, response in responses
-        ])
-        judge_input = f"Requirement: {requirement}\n\n{assistant_responses}"
+        # Iterate for n rounds if n > 0
+        current_responses = initial_responses
+        for iteration in range(n_iterations):
+            print(f"\nIteration {iteration + 1} responses:")
+            print("-"*40)
+            new_responses = []
+            for idx, (assistant_name, model) in enumerate(assistants):
+                other_responses = "\n\n".join([
+                    f"Assistant '{name}' response:\n{resp}"
+                    for name, resp in current_responses if name != assistant_name
+                ])
+                
+                debate_input = f"Requirement: {requirement}\n\nOpposing arguments:\n{other_responses}"
+                
+                response, metrics = self.caller.send_message(
+                    debate_input,
+                    assistant_name=assistant_name,
+                    model=model,
+                    temperature=temperature
+                )
+                print(f"\nAssistant '{assistant_name}':\n{response}")
+                new_responses.append((assistant_name, response))
+                responses.append((assistant_name, response, iteration + 1))
+                
+                for key in total_metrics:
+                    if key != 'execution_time':
+                        total_metrics[key] += metrics[key]
+            
+            current_responses = new_responses
 
-        # Get judge's decision
+        # Get judge's decision for each iteration level
+        decisions = {}
+        judge_metrics = {}
         judge_name, judge_model = judge
-        raw_decision, judge_metrics = self.caller.send_message(
-            judge_input,
-            assistant_name=judge_name,
-            model=judge_model,
-            temperature=temperature
-        )
+        
+        print("\nJudge decisions:")
+        print("-"*40)
+        for n in range(n_iterations + 1):
+            filtered_responses = [r for r in responses if r[2] <= n]
+            discussion_history = "\n\n".join([
+                f"Round {round_num} - Assistant '{name}' response:\n{response}"
+                for name, response, round_num in filtered_responses
+            ])
+            
+            judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
+            
+            raw_decision, metrics = self.caller.send_message(
+                judge_input,
+                assistant_name=judge_name,
+                model=judge_model,
+                temperature=temperature
+            )
 
-        # Parse the JSON response and extract the class value
-        try:
-            decision_obj = json.loads(raw_decision)
-            decision = decision_obj['class']
-            #justification = decision_obj['justification']
-        except (json.JSONDecodeError, KeyError) as e:
-            raise Exception(f"Invalid judge response format: {raw_decision}") from e
+            try:
+                decision_obj = json.loads(raw_decision)
+                decisions[n] = decision_obj['class']
+                judge_metrics[n] = metrics
+                print(f"\nFor iteration {n}:")
+                print(f"Decision: {decision_obj['class']}")
+                print(f"Raw response: {raw_decision}")
+                
+                for key in total_metrics:
+                    if key != 'execution_time':
+                        total_metrics[key] += metrics[key]
+            except (json.JSONDecodeError, KeyError) as e:
+                raise Exception(f"Invalid judge response format: {raw_decision}") from e
 
-        # Add judge metrics
-        for key in total_metrics:
-            total_metrics[key] += judge_metrics[key]
-
-        #return decision, justification, total_metrics
-        return decision, total_metrics
+        total_metrics['execution_time'] = time.time() - start_time
+        print("\n" + "="*80)
+        return decisions, total_metrics
 
     def process_dataset(
         self,
@@ -94,22 +135,35 @@ class LLMCoordinator:
         assistants: List[Tuple[str, str]],
         judge: Tuple[str, str],
         temperature: float = 0,
-        n: int = None
+        n_iterations: int = 0
     ) -> None:
         """Process entire dataset through assistants and judge."""
         df = pd.read_csv(input_file)
-        
-        # If n is specified, sample n requirements from each type
-        if n is not None:
-            df = (df.groupby('type', group_keys=False)
-                   .apply(lambda x: x.sample(min(n, len(x))))
-                   .reset_index(drop=True))
-            
         df['judge'] = ''
-        total_metrics = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
-
-        # Write header to output file
-        df.head(0).to_csv(output_file, index=False)
+        
+        # Create output files for each iteration
+        output_files = {}
+        metrics_files = {}
+        for n in range(n_iterations + 1):
+            # Create output file names with iteration number
+            base_name = output_file.stem
+            output_path = output_file.parent / f"{base_name}_n{n}{output_file.suffix}"
+            metrics_path = output_file.parent / f"{base_name}_metrics_n{n}.json"
+            
+            # Initialize files
+            df.head(0).to_csv(output_path, index=False)
+            output_files[n] = output_path
+            metrics_files[n] = metrics_path
+            
+            # Initialize metrics tracking for each iteration
+            with open(metrics_path, 'w') as f:
+                json.dump({
+                    'prompt_tokens': 0,
+                    'completion_tokens': 0,
+                    'total_tokens': 0,
+                    'execution_time': 0,
+                    'requirements_processed': 0
+                }, f)
 
         # Add progress bar
         for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing requirements"):
@@ -118,24 +172,50 @@ class LLMCoordinator:
                 continue
 
             try:
-                decision, metrics = self.judge_approach(
+                decisions, metrics = self.judge_approach(
                     requirement,
                     assistants,
                     judge,
-                    temperature
+                    temperature,
+                    n_iterations
                 )
-                df.at[idx, 'judge'] = decision
-                # Accumulate metrics
-                for key in total_metrics:
-                    total_metrics[key] += metrics[key]
-
-                # Save this row to the output file
-                df.iloc[[idx]].to_csv(output_file, mode='a', header=False, index=False)
+                
+                # Save results for each iteration
+                for n in range(n_iterations + 1):
+                    # Save decision
+                    row_copy = row.copy()
+                    row_copy['judge'] = decisions[n]
+                    pd.DataFrame([row_copy]).to_csv(output_files[n], mode='a', header=False, index=False)
+                    
+                    # Update metrics file with cumulative metrics
+                    with open(metrics_files[n], 'r') as f:
+                        current_metrics = json.load(f)
+                    
+                    # Calculate execution time up to this iteration
+                    iteration_time = metrics['execution_time'] * (n + 1) / (n_iterations + 1)
+                    
+                    # Update metrics
+                    for key in metrics:
+                        if key == 'execution_time':
+                            current_metrics[key] += iteration_time
+                        else:
+                            # For token metrics, add proportional amount based on iteration
+                            current_metrics[key] += metrics[key] * (n + 1) / (n_iterations + 1)
+                    
+                    current_metrics['requirements_processed'] += 1
+                    
+                    with open(metrics_files[n], 'w') as f:
+                        json.dump(current_metrics, f)
 
             except Exception as e:
                 print(f"Error processing requirement {idx}: {str(e)}")
 
-        print("\nTotal token usage:", total_metrics)
+        # Print final metrics for all iterations
+        print("\nFinal metrics for each iteration:")
+        for n in range(n_iterations + 1):
+            with open(metrics_files[n], 'r') as f:
+                metrics = json.load(f)
+            print(f"\nIteration {n}:", metrics)
 
 def main():
     parser = argparse.ArgumentParser(description='Process requirements through assistants and judge')
@@ -145,6 +225,7 @@ def main():
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
     parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
+    parser.add_argument('--iterations', type=int, default=0, help='Number of debate iterations')
     args = parser.parse_args()
 
     # Initialize coordinator
@@ -162,7 +243,7 @@ def main():
         assistants,
         judge,
         args.temperature,
-        n=args.n
+        n_iterations=args.iterations
     )
 
 if __name__ == "__main__":

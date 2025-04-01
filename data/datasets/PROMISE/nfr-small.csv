@@ -1,2 +1,3 @@
 "requirement","type"
 "The system shall have a MDI form that allows for the viewing of the graph and the data table.",F
+"The system shall display Events in a vertical table by time.",F
