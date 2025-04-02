@@ -24,7 +24,7 @@ class LLMCoordinator:
         judge: Tuple[str, str],
         temperature: float = 0,
         n_iterations: int = 0
-    ) -> Tuple[str, Dict]:
+    ) -> Tuple[Dict, Dict, List]:
         """Process a single requirement through assistants and judge."""
         start_time = time.time()
         responses = []
@@ -38,18 +38,30 @@ class LLMCoordinator:
         print("\n" + "="*80)
         print(f"Processing requirement: {requirement}\n")
 
+        # Create a thread for each assistant for this requirement
+        assistant_threads = {
+            assistant_name: self.caller.create_thread()
+            for assistant_name, _ in assistants
+        }
+
         # Initial responses from assistants
         print("Initial round responses:")
         print("-"*40)
         initial_responses = []
         for assistant_name, model in assistants:
+            thread_id = assistant_threads[assistant_name]
+            print("*"*40)
+            print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
+            print(f"{requirement}")
+            print("\nResponse:")
             response, metrics = self.caller.send_message(
                 requirement,
                 assistant_name=assistant_name,
                 model=model,
-                temperature=temperature
+                temperature=temperature,
+                thread_id=thread_id
             )
-            print(f"\nAssistant '{assistant_name}':\n{response}")
+            print(f"{response}")
             initial_responses.append((assistant_name, response))
             responses.append((assistant_name, response, 0))
             
@@ -64,20 +76,29 @@ class LLMCoordinator:
             print("-"*40)
             new_responses = []
             for idx, (assistant_name, model) in enumerate(assistants):
+                thread_id = assistant_threads[assistant_name]
+                # Get the most recent responses from other assistants
                 other_responses = "\n\n".join([
                     f"Assistant '{name}' response:\n{resp}"
                     for name, resp in current_responses if name != assistant_name
                 ])
                 
-                debate_input = f"Requirement: {requirement}\n\nOpposing arguments:\n{other_responses}"
+                # For subsequent iterations, only provide opposing arguments
+                debate_input = f"Opposing arguments:\n\n{other_responses}"
+                
+                print("*"*40)
+                print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
+                print(f"{debate_input}")
+                print("\nResponse:")
                 
                 response, metrics = self.caller.send_message(
                     debate_input,
                     assistant_name=assistant_name,
                     model=model,
-                    temperature=temperature
+                    temperature=temperature,
+                    thread_id=thread_id
                 )
-                print(f"\nAssistant '{assistant_name}':\n{response}")
+                print(f"{response}")
                 new_responses.append((assistant_name, response))
                 responses.append((assistant_name, response, iteration + 1))
                 
@@ -86,6 +107,10 @@ class LLMCoordinator:
                         total_metrics[key] += metrics[key]
             
             current_responses = new_responses
+
+        # Clean up threads
+        #for thread_id in assistant_threads.values():
+        #    self.caller.delete_thread(thread_id)
 
         # Get judge's decision for each iteration level
         decisions = {}
@@ -126,7 +151,7 @@ class LLMCoordinator:
 
         total_metrics['execution_time'] = time.time() - start_time
         print("\n" + "="*80)
-        return decisions, total_metrics
+        return decisions, total_metrics, responses
 
     def process_dataset(
         self,
@@ -139,7 +164,6 @@ class LLMCoordinator:
     ) -> None:
         """Process entire dataset through assistants and judge."""
         df = pd.read_csv(input_file)
-        df['judge'] = ''
         
         # Create output files for each iteration
         output_files = {}
@@ -150,8 +174,16 @@ class LLMCoordinator:
             output_path = output_file.parent / f"{base_name}_n{n}{output_file.suffix}"
             metrics_path = output_file.parent / f"{base_name}_metrics_n{n}.json"
             
+            # Create columns for each assistant's response at each iteration
+            df_with_responses = df.copy()
+            for iteration in range(n + 1):  # Only include columns up to current iteration
+                for assistant_name, _ in assistants:
+                    col_name = f"response_{assistant_name}_iter{iteration}"
+                    df_with_responses[col_name] = ''
+            df_with_responses['judge'] = ''
+            
             # Initialize files
-            df.head(0).to_csv(output_path, index=False)
+            df_with_responses.head(0).to_csv(output_path, index=False)
             output_files[n] = output_path
             metrics_files[n] = metrics_path
             
@@ -172,7 +204,7 @@ class LLMCoordinator:
                 continue
 
             try:
-                decisions, metrics = self.judge_approach(
+                decisions, metrics, responses = self.judge_approach(
                     requirement,
                     assistants,
                     judge,
@@ -182,12 +214,24 @@ class LLMCoordinator:
                 
                 # Save results for each iteration
                 for n in range(n_iterations + 1):
-                    # Save decision
                     row_copy = row.copy()
+                    
+                    # Add responses up to current iteration
+                    for iteration in range(n + 1):
+                        for assistant_name, _ in assistants:
+                            col_name = f"response_{assistant_name}_iter{iteration}"
+                            # Find the response for this assistant at this iteration
+                            response = next(
+                                (response for name, response, round_num in responses 
+                                 if name == assistant_name and round_num == iteration),
+                                ''  # Default value if not found
+                            )
+                            row_copy[col_name] = response
+                    
                     row_copy['judge'] = decisions[n]
                     pd.DataFrame([row_copy]).to_csv(output_files[n], mode='a', header=False, index=False)
                     
-                    # Update metrics file with cumulative metrics
+                    # Update metrics file
                     with open(metrics_files[n], 'r') as f:
                         current_metrics = json.load(f)
                     
@@ -199,7 +243,6 @@ class LLMCoordinator:
                         if key == 'execution_time':
                             current_metrics[key] += iteration_time
                         else:
-                            # For token metrics, add proportional amount based on iteration
                             current_metrics[key] += metrics[key] * (n + 1) / (n_iterations + 1)
                     
                     current_metrics['requirements_processed'] += 1
@@ -209,13 +252,6 @@ class LLMCoordinator:
 
             except Exception as e:
                 print(f"Error processing requirement {idx}: {str(e)}")
-
-        # Print final metrics for all iterations
-        print("\nFinal metrics for each iteration:")
-        for n in range(n_iterations + 1):
-            with open(metrics_files[n], 'r') as f:
-                metrics = json.load(f)
-            print(f"\nIteration {n}:", metrics)
 
 def main():
     parser = argparse.ArgumentParser(description='Process requirements through assistants and judge')

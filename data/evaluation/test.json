@@ -1,0 +1,13 @@
+{
+    "overall": {
+        "accuracy": 1.0
+    },
+    "per_class": {
+        "F": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1-score": 1.0,
+            "support": 2.0
+        }
+    }
+}
