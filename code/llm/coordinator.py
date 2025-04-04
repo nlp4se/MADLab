@@ -54,13 +54,20 @@ class LLMCoordinator:
             print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
             print(f"{requirement}")
             print("\nResponse:")
-            response, metrics = self.caller.send_message(
-                requirement,
-                assistant_name=assistant_name,
-                model=model,
-                temperature=temperature,
-                thread_id=thread_id
-            )
+            
+            # Add retry logic for initial responses
+            while True:
+                response, metrics = self.caller.send_message(
+                    requirement,
+                    assistant_name=assistant_name,
+                    model=model,
+                    temperature=temperature,
+                    thread_id=thread_id
+                )
+                if "Run status: failed" not in response and "Run status: expired" not in response:
+                    break
+                print(f"Retrying failed/expired message for {assistant_name}...")
+            
             print(f"{response}")
             initial_responses.append((assistant_name, response))
             responses.append((assistant_name, response, 0))
@@ -91,13 +98,19 @@ class LLMCoordinator:
                 print(f"{debate_input}")
                 print("\nResponse:")
                 
-                response, metrics = self.caller.send_message(
-                    debate_input,
-                    assistant_name=assistant_name,
-                    model=model,
-                    temperature=temperature,
-                    thread_id=thread_id
-                )
+                # Add retry logic for iteration responses
+                while True:
+                    response, metrics = self.caller.send_message(
+                        debate_input,
+                        assistant_name=assistant_name,
+                        model=model,
+                        temperature=temperature,
+                        thread_id=thread_id
+                    )
+                    if "Run status: failed" not in response and "Run status: expired" not in response:
+                        break
+                    print(f"Retrying failed/expired message for {assistant_name}...")
+                
                 print(f"{response}")
                 new_responses.append((assistant_name, response))
                 responses.append((assistant_name, response, iteration + 1))
@@ -128,12 +141,17 @@ class LLMCoordinator:
             
             judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
             
-            raw_decision, metrics = self.caller.send_message(
-                judge_input,
-                assistant_name=judge_name,
-                model=judge_model,
-                temperature=temperature
-            )
+            # Add retry logic for judge responses
+            while True:
+                raw_decision, metrics = self.caller.send_message(
+                    judge_input,
+                    assistant_name=judge_name,
+                    model=judge_model,
+                    temperature=temperature
+                )
+                if "Run status: failed" not in raw_decision and "Run status: expired" not in raw_decision:
+                    break
+                print(f"Retrying failed/expired message for judge...")
 
             try:
                 decision_obj = json.loads(raw_decision)

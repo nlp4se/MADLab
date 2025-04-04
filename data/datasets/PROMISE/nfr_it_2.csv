@@ -1,4 +1,90 @@
 "requirement","type"
+"The Disputes System shall prevent the creation of duplicate dispute requests 100% of the time.",F
+" The Disputes System shall accurately provide a list of possible reason codes for a given transaction.  The list of possible reason codes must be derived based on the type of transaction and the industry that the merchant belongs to  according to the business rules defined for the Disputes System.",F
+"The Disputes System must provide the ability to view existing dispute cases.",F
+" The Disputes System must provide Search functionality.  The search method must include the ability to search by (1) the dispute case number  (2) the merchant account number  (3) the cardmember account number and (4) the issuer number.  In addition to the above criteria  the search functionality must further allow the user to limit the results of the search by a date range  the type of dispute (ticket retrieval request or chargeback notification)  the case status (open  closed or all) and the dispute reason code.",F
+"A list of all disputes cases that meet the entered search criteria must be provided to the user.  The list of cases must differentiate the type and/or status of the case by color -coding the line item in the list.  For example all open cases will be yellow and all closed cases will be gray.",F
+"The Disputes System shall provide the users the ability to view the history of all activities that have occurred on the dispute case.",F
+"The Dispute System shall provide the users with the ability to follow up on a dispute case via follow-up actions.  The list of available follow up actions for a given dispute case must be filtered by the status of the case and the access level of the user.",F
+" The Disputes System shall record the name of the user and the date for any activity that creates or modifies the disputes case in the system.  A detailed history of the actions taken on the case  including the date and the user that performed the action must be maintained for auditing purposes.",F
+" For any systematic (non-user initiated) action that occurs on a case such as the disputes aging process  a case activity will be generated.  Upon the next logon the user that initiated the dispute case must be notified that a systematic action has occurred on the dispute case.",F
+"All letter requests must be formatted according to guidelines specified by the Print Letter Utility system.",F
+"Any disputes cases that have been closed for over 6 months must be purged from the online disputes database.",F
+" The user shall search for the preferred repair facility using vehicle  vehicle location  and radius in miles",F
+" The vehicle data shall include vehicle year  make  and model",F
+" The vehicle location shall include street address  city  state  and zipcode",F
+" The system shall resolve the zipcode for the street address  city  and state if zipcode is unknown.",F
+"The search radius shall be between 1 and 30 miles",F
+"The system shall locate the preferred repair facility with the highest ratings for the input criteria",F
+"The adjuster shall enter the preferred repair facility on the estimate assignment.",F
+"The adjuster shall be able to override the preferred repair facitlity on the estimate assignment.",F
+"The preferred repair facility shall be returned to the user.",F
+"The system shall return a list of repair facilities within the radius if the preferred repair facility cannot be determined.",F
+"The estimator shall search for available recycled parts using damaged vehicle parts information.",F
+"The estimator shall search for available recycled parts using a list of preferred parts suppliers.",F
+"The system shall search for available recycled parts for the supplied vehicle parts and suppliers.",F
+"The estimator shall search by zipcode with a radius of 30 miles if no parts are found for the preferred parts suppliers",F
+"The system shall retain the available recycled parts and suppliers returned from the search.",F
+"The available recycled parts information and their suppliers shall be returned to the user.",F
+"The estimator shall apply selected recycled parts to the collision estimate.",F
+"The estimator shall not apply recycled parts to the collision estimate if no available parts are returned.",F
+"The adjuster shall review the collision estimate.",F
+"The adjuster shall request a recycled parts audit of the collision estimate.",F
+"The recycled parts search results provided to the estimator shall be retrieved by the system.",F
+"The system shall generate an audit report based on the available recycled parts and the collision estimate.",F
+"The audit report shall include the total number of recycled parts used in the estimate.",F
+"The audit report shall include the number of available recycled parts from the original search results.",F
+" The audit report shall include the percentage of available recycled parts used in the estimate ",F
+"The audit report shall include the total score of the audit which sums the indivual line items.",F
+"The audit report shall be displayed to the user.",F
+"The audit report shall be available to other adjusters at later points in time.",F
+"The user shall select to view the preferred repair facility ratings.",F
+"The current repair facility ratings shall be displayed to the user.",F
+"The system will display a blank set of ratings if there are not ratings yet defined.",F
+"The user shall enter new ratings based on the audit report",F
+"The ratings shall be from a scale of 1-10",F
+"The ratings shall include categories for attempted use of recycled parts and actual use of recycled parts",F
+"The user shall select to save the preferred repair facility ratings.",F
+"The preferred repair facility ratings shall be saved by the system.",F
+"The product shall record meeting entries.",F
+"The product will notify employees of meeting invitations.",F
+"The product shall have the ability to send meeting reminders to employees.",F
+"The product shall assign the organizers contact information to each meeting they create.",F
+"The product will record meeting acknowledgements.",F
+"The product shall store new conference rooms.",F
+"The product shall update existing conference rooms.",F
+"The product will be able to delete conference rooms.",F
+"The product shall be able to store new room equipment.",F
+"The product will update existing room equipment.",F
+"The product shall be able to delete room equipment.",F
+"The product shall allow an organizer to invite other employees to meetings.",F
+" Each time a conference room is reserved  the conference room schedule shall be updated to reflect the time and date of the reservation.",F
+"The product shall record the transportation status of equipment reserved.",F
+"The product shall display a map of the company building showing conference room locations.",F
+"The product shall record updated meeting agendas.",F
+"The product shall send a meeting confirmation to the meeting organizer.",F
+"The product shall display room equipment according to search parameters.",F
+"The product shall display conference rooms according to search parameters.",F
+"The product shall record different meeting types.",F
+"The product shall record all the equipment that has been reserved.",F
+"The product shall notify building personnel of equipment transport requests.",F
+"The product will allow priviledged users to view meeting schedules in multiple reporting views.",F
+"The product shall be able to send meeting notifications via different kinds of end-user specified methods.",F
+"The product shall have a customizable Look and Feel.",F
+"The product shall have an intuitive user interface.",F
+"The product will display an available status for unreserved conference rooms.",F
+"The System shall allow generation of Inventory Quantity Adjustment documents on demand.",F
+"The System shall allow on demand generation of all Inventory Quantity Adjustment documents since certain point of time.",F
+"The IQA subsystem shall take into account current inventory status and adjust inventory of substitutionary ingredients accordingly.",F
+" The System shall allow entering  storing and modifying product formulas.",F
+" Product formulas shall allow use of semi-products  which have own formulas.",F
+"Product formula ingredients shall allow defining substitutionary ingredients.",F
+"Product formula substitutionary ingredients shall be entered automatically by the PFE subsystem.",F
+"Formula substitutionary ingredients shall be kept in persisted order",F
+" Product shall allow entering  storing and modifying product menus used by POS terminals.",F
+"PME Subsystem shall allow building product menus based on the list of products kept in the accounting system.",F
+"PME Subsystem shall allow keeping submenus within menus and products within submenus in a managed and persisted order.",F
+"PME Subsystem shall allow for a product to exist in more than one submenu",F
 "The RMS System shall have Windows XP look and feel and use GUI futures making its use intuitive.",F
 "The System shall generate Inventory Quantity Adjustment document based on product daily sales data and product formulas.",F
 "The System shall generate Inventory Quantity Adjustment document automatically when daily Product Sales data is available.",F

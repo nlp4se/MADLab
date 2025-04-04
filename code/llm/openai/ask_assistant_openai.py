@@ -64,6 +64,12 @@ class OpenAIAssistantCaller(AssistantCaller):
                     break
                 elif run_status.status not in ["in_progress", "queued"]:
                     print(f"Run status: {run_status.status}")
+                    # Return the error status so the coordinator can retry
+                    return f"Run status: {run_status.status}", {
+                        'prompt_tokens': 0,
+                        'completion_tokens': 0,
+                        'total_tokens': 0
+                    }
                 time.sleep(2)
 
             # Get response
@@ -81,7 +87,11 @@ class OpenAIAssistantCaller(AssistantCaller):
 
         except Exception as e:
             print(f"Error processing message: {e}")
-            return "", {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+            return f"Run status: failed - {str(e)}", {
+                'prompt_tokens': 0,
+                'completion_tokens': 0,
+                'total_tokens': 0
+            }
 
 def main():
     load_dotenv()
