@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🔍 Requirements Classification (Binary) - 
+## 🔍 Requirements Classification (Binary) - Functional and non-functional debaters
 
 This pattern defines three assistants:
 
