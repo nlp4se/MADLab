@@ -81,12 +81,7 @@ python -m code.llm.openai.ask_assistant_openai --assistant_name functional-debat
 ### 🧪 Step 3: Generate ground-truth baseline from dataset
 
 ```bash
-python -m code.evaluation.baseline \
-  --input_path ./data/datasets/PROMISE/nfr.csv \
-  --output_folder ./data/output/baseline/binary/ \
-  --batch_size 10 \
-  --assistant_name persona_classifier_binary \
-  --model gpt-4o
+python -m code.evaluation.baseline --input_path ./data/datasets/PROMISE/nfr.csv --output_folder ./data/output/baseline/binary/  --batch_size 10  --assistant_name persona_classifier_binary  --model gpt-4o
 ```
 
 ---
@@ -94,9 +89,7 @@ python -m code.evaluation.baseline \
 ### 📊 Step 4: Evaluate classification performance for baseline
 
 ```bash
-python -m code.evaluation.metrics \
-  --input ./data/output/baseline/binary/nfr.csv \
-  --output ./data/evaluation/binary
+python -m code.evaluation.metrics --input ./data/output/baseline/binary/nfr.csv --output ./data/evaluation/binary
 ```
 
 ---
@@ -106,33 +99,25 @@ python -m code.evaluation.metrics \
 Run classification using multi-agent debate strategy:
 
 ```bash
-python -m code.llm.coordinator \
-  --input ./data/datasets/PROMISE/nfr.csv \
-  --output ./data/output/judge/binary/nfr.csv \
-  --assistants-file ./data/config/assistants.json \
-  --judge-file ./data/config/judge.json \
-  --temperature 0 \
-  --iterations 1 &
+python -m code.llm.coordinator --input ./data/datasets/PROMISE/nfr.csv --output ./data/output/judge/binary/nfr.csv --assistants-file ./data/config/assistants.json --judge-file ./data/config/judge.json --temperature 0 --iterations 1 &
 ```
 
 Explanation of parameters:
 
---input: Input CSV file path
---output: Output CSV file path
---assistants-file: JSON file with assistant configs
---judge-file: JSON file with judge config
---temperature: Temperature for generation (default: 0)
---n: Number of requirements to sample per class (optional)
---iterations: Number of debate iterations between the debaters (default: 0)
+- --input: Input CSV file path
+- --output: Output CSV file path
+- --assistants-file: JSON file with assistant configs
+- --judge-file: JSON file with judge config
+- --temperature: Temperature for generation (default: 0)
+- --n: Number of requirements to sample per class (optional)
+- --iterations: Number of debate iterations between the debaters (default: 0)
 
 ---
 
 ### 📊 Step 6: Evaluate classification performance for debate results
 
 ```bash
-python -m code.evaluation.metrics \
-  --input ./data/output/judge/binary/nfr.csv \
-  --output ./data/evaluation/judge/binary
+python -m code.evaluation.metrics --input ./data/output/judge/binary/nfr.csv  --output ./data/evaluation/judge/binary
 ```
 
 ---
