@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import argparse
 import os
 from dotenv import load_dotenv
@@ -12,39 +12,57 @@ from .openai.ask_assistant_openai import OpenAIAssistantCaller
 
 load_dotenv()
 
-class LLMCoordinator:
-    def __init__(self, api_key: str):
-        """Initialize the coordinator with an API key."""
-        self.caller = OpenAIAssistantCaller(api_key=api_key)
 
-    def judge_approach(
-        self,
-        requirement: str,
+
+class InteractionProtocol:
+
+    STRATEGIES = {
+        'simultaneous': 'simultaneous_protocol_interaction',
+        'sequential': 'sequential_protocol_interaction',
+    }
+    assigned_strategy: str
+
+
+    def __init__(self, caller, protocol_type: str):
+        self.caller = caller
+        self.assigned_strategy = protocol_type
+
+
+    def run(
+        self, 
         assistants: List[Tuple[str, str]],
-        judge: Tuple[str, str],
-        temperature: float = 0,
-        n_iterations: int = 0
-    ) -> Tuple[Dict, Dict, List]:
-        """Process a single requirement through assistants and judge."""
-        start_time = time.time()
-        responses = []
-        total_metrics = {
-            'prompt_tokens': 0,
-            'completion_tokens': 0,
-            'total_tokens': 0,
-            'execution_time': 0
-        }
+        assistant_threads: Dict[str, str],
+        requirement: str,
+        temperature: float,
+        responses: List[Tuple[str, str, int]],
+        total_metrics: Dict[str, float],
+        n_iterations: int
+    ):
 
-        print("\n" + "="*80)
-        print(f"Processing requirement: {requirement}\n")
+        method_name = self.STRATEGIES[self.assigned_strategy]
+        method = getattr(self, method_name)
 
-        # Create a thread for each assistant for this requirement
-        assistant_threads = {
-            assistant_name: self.caller.create_thread()
-            for assistant_name, _ in assistants
-        }
+        return method(
+            assistants,
+            assistant_threads,
+            requirement,
+            temperature,
+            responses,
+            total_metrics,
+            n_iterations
+        )
 
-        # Initial responses from assistants
+
+    def simultaneous_protocol_interaction(
+        self,
+        assistants: List[Tuple[str, str]],
+        assistant_threads: Dict[str, str],
+        requirement: str,
+        temperature: float,
+        responses: List[Tuple[str, str, int]],
+        total_metrics: Dict[str, float],
+        n_iterations: int
+    ):
         print("Initial round responses:")
         print("-"*40)
         initial_responses = []
@@ -54,30 +72,21 @@ class LLMCoordinator:
             print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
             print(f"{requirement}")
             print("\nResponse:")
-            
-            # Add retry logic for initial responses
-            while True:
-                response, metrics = self.caller.send_message(
-                    requirement,
-                    assistant_name=assistant_name,
-                    model=model,
-                    temperature=temperature,
-                    thread_id=thread_id
-                )
-                if "Run status: failed" not in response and "Run status: expired" not in response:
-                    break
-                print(f"Retrying failed/expired message for {assistant_name}...")
-            
-            print(f"{response}")
-            initial_responses.append((assistant_name, response))
-            responses.append((assistant_name, response, 0))
-            
-            for key in total_metrics:
-                if key != 'execution_time':
-                    total_metrics[key] += metrics[key]
+
+            result_assistant_name, result_response, result_number_iteration = self.assistant_response(
+                thread_id,
+                requirement,
+                assistant_name,
+                model,
+                temperature,
+                total_metrics,
+                0,
+            )
+            responses.append((result_assistant_name, result_response, result_number_iteration))
 
         # Iterate for n rounds if n > 0
-        current_responses = initial_responses
+        current_responses = [(name, resp) for name, resp, _ in responses]
+
         for iteration in range(n_iterations):
             print(f"\nIteration {iteration + 1} responses:")
             print("-"*40)
@@ -92,35 +101,182 @@ class LLMCoordinator:
                 
                 # For subsequent iterations, only provide opposing arguments
                 debate_input = f"Opposing arguments:\n\n{other_responses}"
-                
+
                 print("*"*40)
                 print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
                 print(f"{debate_input}")
                 print("\nResponse:")
-                
-                # Add retry logic for iteration responses
-                while True:
-                    response, metrics = self.caller.send_message(
-                        debate_input,
-                        assistant_name=assistant_name,
-                        model=model,
-                        temperature=temperature,
-                        thread_id=thread_id
-                    )
-                    if "Run status: failed" not in response and "Run status: expired" not in response:
-                        break
-                    print(f"Retrying failed/expired message for {assistant_name}...")
-                
-                print(f"{response}")
-                new_responses.append((assistant_name, response))
-                responses.append((assistant_name, response, iteration + 1))
-                
-                for key in total_metrics:
-                    if key != 'execution_time':
-                        total_metrics[key] += metrics[key]
-            
+
+                result_assistant_name, result_response, result_number_iteration = self.assistant_response(
+                    thread_id,
+                    debate_input,
+                    assistant_name,
+                    model,
+                    temperature,
+                    total_metrics,
+                    iteration + 1,
+                ) 
+                responses.append((result_assistant_name, result_response, result_number_iteration))
+                new_responses.append((result_assistant_name, result_response))
+
             current_responses = new_responses
 
+    def sequential_protocol_interaction(
+        self,
+        assistants: List[Tuple[str, str]],
+        assistant_threads: Dict[str, str],
+        requirement: str,
+        temperature: float,
+        responses: List[Tuple[str, str, int]],
+        total_metrics: Dict[str, float],
+        n_iterations: int
+    ):
+        print("Initial round responses:")
+        print("-"*40)
+        debate_input = requirement
+        for idx, (assistant_name, model) in enumerate(assistants):
+            thread_id = assistant_threads[assistant_name]
+
+
+            if (idx > 0):
+                debate_input = requirement + "\n\nOpossing arguments:\n\n"
+                for name,resp,round in responses:
+                    debate_input += "Assistant" + name +" response:\n" + resp
+
+            # print(f"Input Assistant {assistant_name} with input:\n{debate_input}\n")
+            print("*"*40)
+            print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
+            print(f"{debate_input}")
+            print("\nResponse:")
+            result_assistant_name, result_response, result_number_iteration = self.assistant_response(
+                thread_id,
+                debate_input,
+                assistant_name,
+                model,
+                temperature,
+                total_metrics,
+                0,
+            )
+            # print(f"Output {result_response}\n")
+
+            responses.append((result_assistant_name, result_response, result_number_iteration))
+
+        current_responses = [(name, resp) for name, resp, _ in responses]
+
+        for iteration in range(n_iterations):
+            print(f"\nIteration {iteration + 1} responses:")
+            print("-"*40)
+            new_responses = []
+            for idx, (assistant_name, model) in enumerate(assistants):
+                thread_id = assistant_threads[assistant_name]
+                # Get the most recent responses from other assistants
+                other_responses = "\n\n".join([
+                    f"Assistant '{name}' response:\n{resp}"
+                    for name, resp in current_responses if name != assistant_name
+                ])
+
+                # For subsequent iterations, only provide opposing arguments
+                debate_input = f"Opposing arguments:\n\n{other_responses}"
+
+                # print(f"\nInput Assistant {assistant_name} with input:\n{debate_input}\n")
+                print("*"*40)
+                print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
+                print(f"{debate_input}")
+                print("\nResponse:")
+
+
+                result_assistant_name, result_response, result_number_iteration = self.assistant_response(
+                    thread_id,
+                    debate_input,
+                    assistant_name,
+                    model,
+                    temperature,
+                    total_metrics,
+                    iteration + 1
+                )
+                responses.append((result_assistant_name, result_response, result_number_iteration))
+                new_responses.append((result_assistant_name, result_response, result_number_iteration))
+                current_responses.pop(0) # This is done to avoid sending a response from the previous iteration. Without this you receive the previous response of an assistant and also the even more previous response. However the even more previous response was already given as input in the previous iteration. that's why this operation is necessary.
+                current_responses.append((result_assistant_name, result_response))
+
+                # print(f"Output {result_response}")
+
+
+            current_responses = new_responses
+
+    def assistant_response(
+        self,
+        thread_id: int,
+        requirement: str,
+        assistant_name: str,
+        model: str,
+        temperature: float,
+        total_metrics: Dict[str, float],
+        number_iteration: int,
+    ) -> Tuple[str, str, int]:
+            
+        # Add retry logic for initial responses
+        while True:
+            response, metrics = self.caller.send_message(
+                requirement,
+                assistant_name=assistant_name,
+                model=model,
+                temperature=temperature,
+                thread_id=thread_id
+            )
+            if "Run status: failed" not in response and "Run status: expired" not in response:
+                break
+            print(f"Retrying failed/expired message for {assistant_name}...")
+        
+        print(f"{response}")    
+        for key in total_metrics:
+            if key != 'execution_time':
+                total_metrics[key] += metrics[key]
+
+        return (assistant_name, response, number_iteration)
+
+
+class LLMCoordinator:
+    def __init__(self, api_key: str, protocol_type: str):
+        """Initialize the coordinator with an API key."""
+        self.caller = OpenAIAssistantCaller(api_key=api_key)
+        self.protocol = InteractionProtocol(self.caller, protocol_type)
+    
+    def judge_approach(
+        self,
+        requirement: str,
+        assistants: List[Tuple[str, str]],
+        judge: Tuple[str, str],
+        temperature: float = 0,
+        n_iterations: int = 0
+    ) -> Tuple[Dict, Dict, List]:
+        responses = []
+        """Process a single requirement through assistants and judge."""
+        start_time = time.time()
+        total_metrics = {
+            'prompt_tokens': 0,
+            'completion_tokens': 0,
+            'total_tokens': 0,
+            'execution_time': 0
+        }
+
+        print("\n" + "="*80)
+
+        # Create a thread for each assistant for this requirement
+        assistant_threads = {
+            assistant_name: self.caller.create_thread()
+            for assistant_name, _ in assistants
+        }
+
+        self.protocol.run(
+            assistants,
+            assistant_threads,
+            requirement,
+            temperature,
+            responses,
+            total_metrics,
+            n_iterations,
+        )
         # Clean up threads
         #for thread_id in assistant_threads.values():
         #    self.caller.delete_thread(thread_id)
@@ -280,16 +436,22 @@ def main():
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
     parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
     parser.add_argument('--iterations', type=int, default=0, help='Number of debate iterations')
+    parser.add_argument('--protocol_type', type=str, choices = InteractionProtocol.STRATEGIES.keys(), default="simultaneous", help='Choose Interaction Protocol: "simultaneous" , "sequential"')
     args = parser.parse_args()
 
+    print("The debate will be done by " + args.protocol_type + " protocol debate")
+
     # Initialize coordinator
-    coordinator = LLMCoordinator(api_key=os.getenv("OPENAI_API_KEY"))
+    coordinator = LLMCoordinator(api_key=os.getenv("OPENAI_API_KEY"), protocol_type = args.protocol_type)
 
     # Load configurations
     with open(args.assistants_file) as f:
         assistants = json.load(f)  # Expected: [["assistant1_name", "model1"], ...]
     with open(args.judge_file) as f:
         judge = json.load(f)  # Expected: ["judge_name", "model"]
+
+    # Protocol Strategy
+    # protocol_class = PROTOCOL_REGISTRY[args.protocol]
 
     coordinator.process_dataset(
         args.input,
