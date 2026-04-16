@@ -1,3 +1,4 @@
+import sys
 from typing import List, Dict, Tuple, Any
 import argparse
 import os
@@ -156,14 +157,6 @@ class LLMCoordinator:
             )
 
         # ==========================================
-        # EXECUTION MODE AND TURNS
-        # ==========================================
-
-        if isinstance(turns, dict):
-            base_turns = None   # Fixed turns for each round
-        else:
-            base_turns = turns  # Variable turns for each round
-        # ==========================================
         # ORCHESTRATOR EXECUTION
         # ==========================================
         
@@ -173,7 +166,7 @@ class LLMCoordinator:
         for round_num in range(n_iterations + 1):
             print(f"\nRound {round_num}")
             
-            current_round_turns = base_turns if base_turns is not None else turns.get(str(round_num), [])
+            current_round_turns = turns if not isinstance(turns, dict) else turns.get(str(round_num), [])
 
             for turn_number, node_group in enumerate(current_round_turns, 0):
                 print(f"\n  Turn {turn_number} {node_group}:")
@@ -384,8 +377,15 @@ def main():
     with open(args.interaction_file) as f:
         interaction_config = json.load(f)
 
-    validate_interaction_file(interaction_config, args.iterations)
-    
+    try:
+        validate_interaction_file(interaction_config, args.iterations)
+    except ValueError as e:
+        if str(e).startswith("Configuration Error:"):
+            print(f"\n{e}")
+            sys.exit(1)
+        else:
+            raise
+
     assistants = interaction_config["assistants"]
     topology = interaction_config["topology"]
     turns = interaction_config["turns"]

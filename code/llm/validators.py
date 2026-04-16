@@ -15,7 +15,7 @@ def validate_required_keys(config):
         raise ValueError("Configuration Error: 'turns' must be a list or a dictionary.")
 
 def validate_topology(assistants, topology):
-    """Check that the topology uses valid names and prevents duplicate edges."""
+    """Check that the topology uses valid names and prevents duplicate edges or self-references."""
     assistants_set = set(assistants)
     for node, edges in topology.items():
         if node not in assistants_set:
