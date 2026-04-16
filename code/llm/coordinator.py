@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple, Any
 import argparse
 import os
 from dotenv import load_dotenv
@@ -34,7 +34,7 @@ class AssistantAgent:
         pub.subscribe(self.process_and_clear, f"process_{self.name}")
         pub.subscribe(self.send_response, f"send_{self.name}")
 
-    def receive_data(self, sender: str, content: str, round_number: int = None):        
+    def receive_data(self, sender: str, content: str, round_number: int = None):  # The round number is required to match send_response's signature. The AssistantAgent doesn't need it, but the JudgeAgent listening on this same channel does.
         self.inbox.append((sender, content))
 
     def process_and_clear(self, round_number: int):
@@ -85,13 +85,12 @@ class AssistantAgent:
                 thread_id=self.thread_id
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
-                return response, metrics
-                    
+                return response, metrics               
 
 
     def send_response(self, round_number: int):
         if self.response_ready_to_send:
-            pub.sendMessage(self.name, sender=self.name, content=self.response_ready_to_send, round_number=round_number)            
+            pub.sendMessage(self.name, sender=self.name, content=self.response_ready_to_send, round_number=round_number)   # We send round_number strictly so the listening JudgeAgent can track the debate turns.
             self.response_ready_to_send = None
 
 
@@ -168,7 +167,7 @@ class LLMCoordinator:
         # ORCHESTRATOR EXECUTION
         # ==========================================
         
-        # The coordinator launches the first message
+        # The coordinator launches the requirement to classify
         pub.sendMessage("requirement_channel", sender="Coordinator", content=requirement)
 
         for round_num in range(n_iterations + 1):
