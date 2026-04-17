@@ -78,17 +78,6 @@ class AssistantAgent:
         return "\n\n".join(debate_input_parts)
 
     def _call_api(self, debate_input: str) -> tuple:
-
-        metrics = {
-            'prompt_tokens': 0,
-            'completion_tokens': 0,
-            'total_tokens': 0,
-            'execution_time': 0
-        }
-        responses = f"response of {self.name}"
-        return responses, metrics
-
-        """
         while True:
             response, metrics = self.caller.send_message(
                 debate_input,
@@ -98,7 +87,6 @@ class AssistantAgent:
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
                 return response, metrics        
-        """
 
 
     def send_response(self, round_number: int):
