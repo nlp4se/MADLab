@@ -78,6 +78,17 @@ class AssistantAgent:
         return "\n\n".join(debate_input_parts)
 
     def _call_api(self, debate_input: str) -> tuple:
+
+        metrics = {
+            'prompt_tokens': 0,
+            'completion_tokens': 0,
+            'total_tokens': 0,
+            'execution_time': 0
+        }
+        responses = f"response of {self.name}"
+        return responses, metrics
+
+        """
         while True:
             response, metrics = self.caller.send_message(
                 debate_input,
@@ -86,7 +97,8 @@ class AssistantAgent:
                 thread_id=self.thread_id
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
-                return response, metrics               
+                return response, metrics        
+        """
 
 
     def send_response(self, round_number: int):
@@ -366,7 +378,6 @@ def main():
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
     parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
-    parser.add_argument('--iterations', type=int, default=0, help='Number of debate iterations')
     parser.add_argument('--interaction-file', type=Path, required=True, help='JSON file with topology and protocol config')
     args = parser.parse_args()
 
@@ -378,7 +389,7 @@ def main():
         interaction_config = json.load(f)
 
     try:
-        validate_interaction_file(interaction_config, args.iterations)
+        validate_interaction_file(interaction_config)
     except ValueError as e:
         if str(e).startswith("Configuration Error:"):
             print(f"\n{e}")
@@ -386,9 +397,15 @@ def main():
         else:
             raise
 
+    turns = interaction_config.get("turns", [])
+
+    if isinstance(turns, dict):
+        iterations = len(turns.keys()) - 1
+    else:
+        iterations = interaction_config.get("number_of_rounds", 0) - 1
+
     assistants = interaction_config["assistants"]
     topology = interaction_config["topology"]
-    turns = interaction_config["turns"]
 
     with open(args.judge_file) as f:
         judge = json.load(f)  # Expected: ["judge_name", "model"]
@@ -402,10 +419,9 @@ def main():
         turns,
         judge,
         args.temperature,
-        n_iterations=args.iterations
+        n_iterations = iterations
     )
 
 if __name__ == "__main__":
     main()
-
 

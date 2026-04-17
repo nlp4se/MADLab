@@ -31,31 +31,34 @@ def validate_topology(assistants, topology):
             if edge == node:
                 raise ValueError(f"Configuration Error: Node '{node}' cannot point to itself in 'topology'.")
 
-def validate_turns(assistants, turns, n_iterations):
-    """Check the format of the turns, ensure rounds match exactly 0 to N, and no duplicates exist."""
-    assistants_set = set(assistants)
+def validate_turns(interaction_config):
+    """Check the format of the turns, ensure rounds are correct, and no duplicates exist."""
+    assistants_set = set(interaction_config.get("assistants", []))
+    turns = interaction_config.get("turns", [])
     rounds_to_check = []
     
     if isinstance(turns, dict):
-        # Rounds must go strictly from 0 to n_iterations (inclusive)
-        expected_rounds = n_iterations + 1
+        n_iterations = len(turns) - 1
+        expected_keys = {str(i) for i in range(n_iterations + 1)}
         actual_keys = set(turns.keys())
-        expected_keys = {str(i) for i in range(expected_rounds)}
         
-        missing_keys = expected_keys - actual_keys
-        if missing_keys:
-            raise ValueError(f"Configuration Error: Missing turns for rounds {missing_keys}. Expected exactly 0 to {n_iterations}.")
+        if actual_keys != expected_keys:
+            raise ValueError(f"Configuration Error: Keys in 'turns' dict must go strictly from 0 to {n_iterations}. Found: {actual_keys}. Expected: {expected_keys}")
             
-        extra_keys = actual_keys - expected_keys
-        if extra_keys:
-            raise ValueError(f"Configuration Error: Invalid or extra rounds detected {extra_keys}. Expected exactly 0 to {n_iterations}.")
-            
-        for i in range(expected_rounds):
+        for i in range(n_iterations + 1):
             rounds_to_check.append(turns[str(i)])
             
     elif isinstance(turns, list):
-        # Same turns for all rounds
+        if "number_of_rounds" not in interaction_config:
+            raise ValueError("Configuration Error: 'number_of_rounds' must be specified in the JSON when 'turns' is a not a dictionary.")
+        
+        number_of_rounds = interaction_config["number_of_rounds"]
+        if not isinstance(number_of_rounds, int) or number_of_rounds - 1 < 0:
+            raise ValueError("Configuration Error: 'number_of_rounds' must be greater than 0.")
+            
         rounds_to_check.append(turns)
+    else:
+        raise ValueError("Configuration Error: 'turns' must be either a list or a dictionary.")
 
     for current_round_turns in rounds_to_check:
         if not isinstance(current_round_turns, list):
@@ -73,13 +76,12 @@ def validate_turns(assistants, turns, n_iterations):
                     raise ValueError(f"Configuration Error: Node '{node}' speaks more than once in the same round.")
                 seen_in_round.add(node)
 
-def validate_interaction_file(config, n_iterations):
+def validate_interaction_file(config):
     """Main entry point for file validation."""
     validate_required_keys(config)
     
     assistants = config["assistants"]
     topology = config["topology"]
-    turns = config["turns"]
 
     validate_topology(assistants, topology)
-    validate_turns(assistants, turns, n_iterations)
+    validate_turns(config)
