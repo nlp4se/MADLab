@@ -1,131 +1,201 @@
-from typing import List, Dict, Tuple
+import sys
+from typing import List, Dict, Tuple, Any
 import argparse
 import os
 from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import json
+from .validators import validate_interaction_file
 from tqdm import tqdm
 import time
+from pubsub import pub
 
 from .openai.ask_assistant_openai import OpenAIAssistantCaller
 
 load_dotenv()
 
-class LLMCoordinator:
-    def __init__(self, api_key: str):
-        """Initialize the coordinator with an API key."""
-        self.caller = OpenAIAssistantCaller(api_key=api_key)
 
-    def judge_approach(
-        self,
-        requirement: str,
-        assistants: List[Tuple[str, str]],
-        judge: Tuple[str, str],
-        temperature: float = 0,
-        n_iterations: int = 0
-    ) -> Tuple[Dict, Dict, List]:
-        """Process a single requirement through assistants and judge."""
-        start_time = time.time()
-        responses = []
-        total_metrics = {
+class AssistantAgent:
+    def __init__(self, name: str, thread_id: str, caller: OpenAIAssistantCaller, temperature: float, channels_to_listen: List[str]):
+        self.name = name
+        self.thread_id = thread_id
+        self.caller = caller
+        self.temperature = temperature
+        
+        self.inbox = []
+        self.response_ready_to_send = None
+        
+        # --- SUBSCRIPTIONS TO DATA BUS ---
+        for channel in channels_to_listen:
+            pub.subscribe(self.receive_data, channel)
+        pub.subscribe(self.receive_data, "requirement_channel")
+        
+        # --- SUBSCRIPTIONS TO CONTROL BUS ---
+        pub.subscribe(self.process_and_clear, f"process_{self.name}")
+        pub.subscribe(self.send_response, f"send_{self.name}")
+
+    def receive_data(self, sender: str, content: str, round_number: int = None):  # The round number is required to match send_response's signature. The AssistantAgent doesn't need it, but the JudgeAgent listening on this same channel does.
+        self.inbox.append((sender, content))
+
+    def process_and_clear(self, round_number: int):
+        data_to_process = list(self.inbox)
+        self.inbox.clear()
+        
+        # 1. Build the prompt based on received data
+        debate_input = self.build_debate_input(round_number, data_to_process)
+
+        print(f"\n    Input to Assistant '{self.name}' [Thread ID: {self.thread_id}]:")
+        print(f"      {debate_input.replace(chr(10), chr(10) + '      ')}")
+        print("\n    Response:")
+
+        # 2. Call OpenAI API
+        response, metrics = self._call_api(debate_input)
+            
+        print(f"      {response.replace(chr(10), chr(10) + '      ')}")
+        
+        # Save the response and send metrics to monitor
+        self.response_ready_to_send = response
+        pub.sendMessage("metrics_channel", metrics=metrics)
+
+    def build_debate_input(self, round_number, data_to_process):
+        requirement_base = ""
+        opposing_args = []
+        
+        for sender, content in data_to_process:
+            if sender == "Coordinator":
+                requirement_base = content
+            else:
+                opposing_args.append(f"Assistant '{sender}' response:\n{content}")
+
+        debate_input_parts = []
+
+        if round_number == 0 and requirement_base:
+            debate_input_parts.append(requirement_base)
+
+        if opposing_args:
+            debate_input_parts.append("Opposing arguments:\n" + "\n\n".join(opposing_args))
+        return "\n\n".join(debate_input_parts)
+
+    def _call_api(self, debate_input: str) -> tuple:
+        while True:
+            response, metrics = self.caller.send_message(
+                debate_input,
+                assistant_name=self.name,
+                temperature=self.temperature,
+                thread_id=self.thread_id
+            )
+            if "Run status: failed" not in response and "Run status: expired" not in response:
+                return response, metrics        
+
+
+    def send_response(self, round_number: int):
+        if self.response_ready_to_send:
+            pub.sendMessage(self.name, sender=self.name, content=self.response_ready_to_send, round_number=round_number)   # We send round_number strictly so the listening JudgeAgent can track the debate turns.
+            self.response_ready_to_send = None
+
+
+class JudgeAgent:
+    def __init__(self, channels_to_listen: List[str]):
+        self.responses = []
+        self.total_metrics = {
             'prompt_tokens': 0,
             'completion_tokens': 0,
             'total_tokens': 0,
             'execution_time': 0
         }
+        
+        for channel in channels_to_listen:
+            pub.subscribe(self.register_response, channel)
+            
+        pub.subscribe(self.register_metrics, "metrics_channel")
 
-        print("\n" + "="*80)
-        print(f"Processing requirement: {requirement}\n")
+    def register_response(self, sender: str, content: str, round_number: int):
+        self.responses.append((sender, content, round_number))
 
-        # Create a thread for each assistant for this requirement
+    def register_metrics(self, metrics: Dict[str, float]):
+        for key in self.total_metrics:
+            if key != 'execution_time' and key in metrics:
+                self.total_metrics[key] += metrics[key]
+
+
+class LLMCoordinator:
+    def __init__(self, api_key: str):
+        """Initialize the coordinator with an API key."""
+        self.caller = OpenAIAssistantCaller(api_key=api_key)
+    
+    def run_debate(
+        self,
+        requirement: str,
+        assistants: List[str],
+        topology: Dict[str, List[str]],
+        turns: Any,
+        temperature: float = 0,
+        n_iterations: int = 0
+    ) -> Tuple[List, Dict]:
+        """Execute the debate between assistants and return responses and metrics."""
+        
+        # Clear previous subscriptions and instantiate Judge Node to collect all debate responses and metrics
+        pub.unsubAll()
+        monitor = JudgeAgent(channels_to_listen=assistants)
+
+        # Create threads (OpenAI API requirement)
         assistant_threads = {
-            assistant_name: self.caller.create_thread()
-            for assistant_name, _ in assistants
+            name: self.caller.create_thread() for name in assistants
         }
 
-        # Initial responses from assistants
-        print("Initial round responses:")
-        print("-"*40)
-        initial_responses = []
-        for assistant_name, model in assistants:
-            thread_id = assistant_threads[assistant_name]
-            print("*"*40)
-            print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
-            print(f"{requirement}")
-            print("\nResponse:")
-            
-            # Add retry logic for initial responses
-            while True:
-                response, metrics = self.caller.send_message(
-                    requirement,
-                    assistant_name=assistant_name,
-                    model=model,
-                    temperature=temperature,
-                    thread_id=thread_id
-                )
-                if "Run status: failed" not in response and "Run status: expired" not in response:
-                    break
-                print(f"Retrying failed/expired message for {assistant_name}...")
-            
-            print(f"{response}")
-            initial_responses.append((assistant_name, response))
-            responses.append((assistant_name, response, 0))
-            
-            for key in total_metrics:
-                if key != 'execution_time':
-                    total_metrics[key] += metrics[key]
+        # Instantiate agents iterating over the graph configuration provided in interaction_file JSON
+        instantiated_nodes = {}
+        for name in assistants:
+            edges = topology.get(name, [])
+            instantiated_nodes[name] = AssistantAgent(
+                name=name, 
+                thread_id=assistant_threads[name], 
+                caller=self.caller, 
+                temperature=temperature, 
+                channels_to_listen=edges
+            )
 
-        # Iterate for n rounds if n > 0
-        current_responses = initial_responses
-        for iteration in range(n_iterations):
-            print(f"\nIteration {iteration + 1} responses:")
-            print("-"*40)
-            new_responses = []
-            for idx, (assistant_name, model) in enumerate(assistants):
-                thread_id = assistant_threads[assistant_name]
-                # Get the most recent responses from other assistants
-                other_responses = "\n\n".join([
-                    f"Assistant '{name}' response:\n{resp}"
-                    for name, resp in current_responses if name != assistant_name
-                ])
-                
-                # For subsequent iterations, only provide opposing arguments
-                debate_input = f"Opposing arguments:\n\n{other_responses}"
-                
-                print("*"*40)
-                print(f"\nInput to Assistant '{assistant_name}' [Thread ID: {thread_id}]:")
-                print(f"{debate_input}")
-                print("\nResponse:")
-                
-                # Add retry logic for iteration responses
-                while True:
-                    response, metrics = self.caller.send_message(
-                        debate_input,
-                        assistant_name=assistant_name,
-                        model=model,
-                        temperature=temperature,
-                        thread_id=thread_id
-                    )
-                    if "Run status: failed" not in response and "Run status: expired" not in response:
-                        break
-                    print(f"Retrying failed/expired message for {assistant_name}...")
-                
-                print(f"{response}")
-                new_responses.append((assistant_name, response))
-                responses.append((assistant_name, response, iteration + 1))
-                
-                for key in total_metrics:
-                    if key != 'execution_time':
-                        total_metrics[key] += metrics[key]
+        # ==========================================
+        # ORCHESTRATOR EXECUTION
+        # ==========================================
+        
+        # The coordinator launches the requirement to classify
+        pub.sendMessage("requirement_channel", sender="Coordinator", content=requirement)
+
+        for round_num in range(n_iterations + 1):
+            print(f"\nRound {round_num}")
             
-            current_responses = new_responses
+            current_round_turns = turns if not isinstance(turns, dict) else turns.get(str(round_num), [])
 
-        # Clean up threads
-        #for thread_id in assistant_threads.values():
-        #    self.caller.delete_thread(thread_id)
+            for turn_number, node_group in enumerate(current_round_turns, 0):
+                print(f"\n  Turn {turn_number} {node_group}:")
+                
+                # Step 1: Tell agents in this turn to process their inbox
+                for node_name in node_group:
+                    pub.sendMessage(f"process_{node_name}", round_number=round_num)
+                    
+                # Step 2: Once all agents have processed their inbox, tell them to emit their responses. It is necessary to have this as a separate step to ensure that all agents in the same turn are responding based on the current information (the state of the debate at the beginning of the turn), and not reacting to each other's responses within the same turn.
+                for node_name in node_group:
+                    pub.sendMessage(f"send_{node_name}", round_number=round_num)
 
-        # Get judge's decision for each iteration level
+        # Debate finished, retrieve history
+        responses = monitor.responses
+        metrics = monitor.total_metrics
+
+        return responses, metrics
+
+    def judge_approach(
+        self,
+        requirement: str,
+        responses: List,
+        metrics: Dict,
+        judge: Tuple[str, str],
+        temperature: float = 0,
+        n_iterations: int = 0
+    ) -> Tuple[Dict, Dict, List]:
+        """Analyze debate results using the judge and return decisions, metrics, and responses."""
+        
         decisions = {}
         judge_metrics = {}
         judge_name, judge_model = judge
@@ -143,7 +213,7 @@ class LLMCoordinator:
             
             # Add retry logic for judge responses
             while True:
-                raw_decision, metrics = self.caller.send_message(
+                raw_decision, judge_metrics_iter = self.caller.send_message(
                     judge_input,
                     assistant_name=judge_name,
                     model=judge_model,
@@ -156,26 +226,26 @@ class LLMCoordinator:
             try:
                 decision_obj = json.loads(raw_decision)
                 decisions[n] = decision_obj['class']
-                judge_metrics[n] = metrics
+                judge_metrics[n] = judge_metrics_iter
                 print(f"\nFor iteration {n}:")
                 print(f"Decision: {decision_obj['class']}")
                 print(f"Raw response: {raw_decision}")
                 
-                for key in total_metrics:
+                for key in metrics:
                     if key != 'execution_time':
-                        total_metrics[key] += metrics[key]
+                        metrics[key] += judge_metrics_iter[key]
             except (json.JSONDecodeError, KeyError) as e:
                 raise Exception(f"Invalid judge response format: {raw_decision}") from e
 
-        total_metrics['execution_time'] = time.time() - start_time
-        print("\n" + "="*80)
-        return decisions, total_metrics, responses
+        return decisions, metrics, responses
 
     def process_dataset(
         self,
         input_file: Path,
         output_file: Path,
-        assistants: List[Tuple[str, str]],
+        assistants: List[str],
+        topology: Dict[str, List[str]],
+        turns: Any,
         judge: Tuple[str, str],
         temperature: float = 0,
         n_iterations: int = 0
@@ -195,7 +265,7 @@ class LLMCoordinator:
             # Create columns for each assistant's response at each iteration
             df_with_responses = df.copy()
             for iteration in range(n + 1):  # Only include columns up to current iteration
-                for assistant_name, _ in assistants:
+                for assistant_name in assistants:
                     col_name = f"response_{assistant_name}_iter{iteration}"
                     df_with_responses[col_name] = ''
             df_with_responses['judge'] = ''
@@ -222,13 +292,31 @@ class LLMCoordinator:
                 continue
 
             try:
-                decisions, metrics, responses = self.judge_approach(
+                start_time = time.time()
+                print("\n" + "="*80)
+                
+                # Run the debate
+                responses, metrics = self.run_debate(
                     requirement,
                     assistants,
+                    topology,
+                    turns,
+                    temperature,
+                    n_iterations
+                )
+                
+                # Analyze debate results with judge
+                decisions, metrics, responses = self.judge_approach(
+                    requirement,
+                    responses,
+                    metrics,
                     judge,
                     temperature,
                     n_iterations
                 )
+                
+                metrics['execution_time'] = time.time() - start_time
+                print("\n" + "="*80)
                 
                 # Save results for each iteration
                 for n in range(n_iterations + 1):
@@ -236,7 +324,7 @@ class LLMCoordinator:
                     
                     # Add responses up to current iteration
                     for iteration in range(n + 1):
-                        for assistant_name, _ in assistants:
+                        for assistant_name in assistants:
                             col_name = f"response_{assistant_name}_iter{iteration}"
                             # Find the response for this assistant at this iteration
                             response = next(
@@ -275,30 +363,53 @@ def main():
     parser = argparse.ArgumentParser(description='Process requirements through assistants and judge')
     parser.add_argument('--input', type=Path, required=True, help='Input CSV file path')
     parser.add_argument('--output', type=Path, required=True, help='Output CSV file path')
-    parser.add_argument('--assistants-file', type=Path, required=True, help='JSON file with assistant configs')
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
     parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
-    parser.add_argument('--iterations', type=int, default=0, help='Number of debate iterations')
+    parser.add_argument('--interaction-file', type=Path, required=True, help='JSON file with topology and protocol config')
     args = parser.parse_args()
 
     # Initialize coordinator
     coordinator = LLMCoordinator(api_key=os.getenv("OPENAI_API_KEY"))
 
     # Load configurations
-    with open(args.assistants_file) as f:
-        assistants = json.load(f)  # Expected: [["assistant1_name", "model1"], ...]
+    with open(args.interaction_file) as f:
+        interaction_config = json.load(f)
+
+    try:
+        validate_interaction_file(interaction_config)
+    except ValueError as e:
+        if str(e).startswith("Configuration Error:"):
+            print(f"\n{e}")
+            sys.exit(1)
+        else:
+            raise
+
+    turns = interaction_config.get("turns", [])
+
+    if isinstance(turns, dict):
+        iterations = len(turns.keys()) - 1
+    else:
+        iterations = interaction_config.get("number_of_rounds", 0) - 1
+
+    assistants = interaction_config["assistants"]
+    topology = interaction_config["topology"]
+
     with open(args.judge_file) as f:
         judge = json.load(f)  # Expected: ["judge_name", "model"]
+
 
     coordinator.process_dataset(
         args.input,
         args.output,
         assistants,
+        topology,
+        turns,
         judge,
         args.temperature,
-        n_iterations=args.iterations
+        n_iterations = iterations
     )
 
 if __name__ == "__main__":
     main()
+
