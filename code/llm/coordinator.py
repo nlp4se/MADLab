@@ -365,7 +365,6 @@ def main():
     parser.add_argument('--output', type=Path, required=True, help='Output CSV file path')
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for generation')
-    parser.add_argument('--n', type=int, help='Number of requirements to sample per class (optional)')
     parser.add_argument('--interaction-file', type=Path, required=True, help='JSON file with topology and protocol config')
     args = parser.parse_args()
 
