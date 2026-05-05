@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import json
-from .validators import validate_interaction_file
+from .tests.validators import validate_interaction_file
 from tqdm import tqdm
 import time
 from pubsub import pub
@@ -78,6 +78,17 @@ class AssistantAgent:
         return "\n\n".join(debate_input_parts)
 
     def _call_api(self, debate_input: str) -> tuple:
+        #"""
+        metrics = {
+            'prompt_tokens': 0,
+            'completion_tokens': 0,
+            'total_tokens': 0,
+            'execution_time': 0
+        }
+        response = f"Response from {self.name}: "
+        return response, metrics
+        #"""
+        """
         while True:
             response, metrics = self.caller.send_message(
                 debate_input,
@@ -87,7 +98,7 @@ class AssistantAgent:
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
                 return response, metrics        
-
+        """
 
     def send_response(self, round_number: int):
         if self.response_ready_to_send:
@@ -212,16 +223,8 @@ class LLMCoordinator:
             judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
             
             # Add retry logic for judge responses
-            while True:
-                raw_decision, judge_metrics_iter = self.caller.send_message(
-                    judge_input,
-                    assistant_name=judge_name,
-                    model=judge_model,
-                    temperature=temperature
-                )
-                if "Run status: failed" not in raw_decision and "Run status: expired" not in raw_decision:
-                    break
-                print(f"Retrying failed/expired message for judge...")
+            raw_decision = '{"class": 0}'               # Example: class 0
+            judge_metrics_iter = {key: 0.0 for key in metrics}  # Dummy metrics, all zero
 
             try:
                 decision_obj = json.loads(raw_decision)
