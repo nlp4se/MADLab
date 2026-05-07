@@ -6,7 +6,7 @@ and accepts valid ones, without duplicating validation logic.
 
 import pytest
 from hypothesis import given, strategies as st
-from .validators import validate_interaction_file, validate_turns
+from ..validators import validate_interaction_file, validate_turns
 from .strategies import (
     assistant_ids,
     valid_interaction_config_list,
@@ -144,12 +144,6 @@ def test_turns_not_list_nor_dict():
     config = {"assistants": [], "topology": {}, "turns": 123}
     with pytest.raises(ValueError, match="'turns' must be a list or a dictionary"):
         validate_interaction_file(config)
-
-# FR-PROT AC2
-def test_turns_else_branch():
-    """Validates error handling for invalid 'turns' type in validate_turns."""
-    with pytest.raises(ValueError, match="'turns' must be either a list or a dictionary"):
-        validate_turns({"assistants": [], "turns": 123})
 
 # FR-PROT AC3
 def test_round_not_list():

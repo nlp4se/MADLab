@@ -254,6 +254,3 @@ def test_judge_collects_entire_debate(config):
         f"got {len(responses)}"
     )
 
-
-
-   

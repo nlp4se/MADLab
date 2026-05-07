@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import json
-from .tests.validators import validate_interaction_file
+from .validators import validate_interaction_file
 from tqdm import tqdm
 import time
 from pubsub import pub
