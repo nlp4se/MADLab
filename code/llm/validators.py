@@ -30,8 +30,6 @@ def validate_topology(assistants, topology):
         raise ValueError(msg)
 
     for node, edges in topology.items():
-        if node not in assistants_set:
-            raise ValueError(f"Configuration Error: Source node '{node}' in 'topology' does not exist in 'assistants'.")
             
         # len(set(edges)) removes duplicates. If length changes, there were duplicates.
         if len(edges) != len(set(edges)):

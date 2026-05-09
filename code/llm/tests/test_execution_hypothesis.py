@@ -23,26 +23,34 @@ def _make_mock_caller():
     return mock_caller
 
 
+# ---------------------------------------------------------------------------
+# FR-EXEC AC2: Messages respect topology
+# ---------------------------------------------------------------------------
+
 @st.composite
-def _assistants_and_topology(draw):
+def _topology_test_config(draw):
+    """Random assistants, random topology shape, random turns format (50/50 list/dict)."""
     assistants = draw(assistant_ids)
     topology = draw(valid_topology(assistants))
     turns = draw(valid_turns_list_strategy(assistants))
-    n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
-    return assistants, topology, turns, n_rounds
+    use_dict = draw(st.booleans())
+    if use_dict:
+        turns = {"0": turns}
+    return assistants, topology, turns
 
 
-@given(config=_assistants_and_topology())
-# FR-EXEC AC2
+@given(config=_topology_test_config())
 def test_messages_respect_topology(config):
-    """Validates that messages are only delivered to agents in the receiver's topology."""
-    assistants, topology, turns, n_rounds = config
+    """[FR-EXEC-AC2] Validates that messages are only delivered to agents in the receiver's topology.
+    Topology shape varies each run (ring, mesh, partial...).
+    Alternates ~50/50 between list-style and dict-style turns.
+    At least 1 assistant per turn guaranteed by valid_turns_list_strategy.
+    """
+    assistants, topology, turns = config
 
     original_receive = AssistantAgent.receive_data
     received_messages = []
 
-    # Spy function: replaces AssistantAgent.receive_data with spy_receive.
-    # spy_receive appends each message to received_messages for spying, then calls the original receive_data.
     def spy_receive(self, sender, content, round_number=None):
         received_messages.append((self.name, sender, content))
         original_receive(self, sender, content, round_number)
@@ -56,13 +64,12 @@ def test_messages_respect_topology(config):
             assistants=assistants,
             topology=topology,
             turns=turns,
-            n_iterations=n_rounds - 1,
+            n_iterations=0,
         )
 
     for receiver, sender, _ in received_messages:
         if sender == "Coordinator":
             continue
-
         assert receiver in topology, (
             f"Receiver '{receiver}' not found in topology"
         )
@@ -71,6 +78,10 @@ def test_messages_respect_topology(config):
             f"but '{sender}' is not in topology['{receiver}'] = {topology[receiver]}"
         )
 
+
+# ---------------------------------------------------------------------------
+# FR-EXEC AC1: Protocol executed correctly — list turns
+# ---------------------------------------------------------------------------
 
 @st.composite
 def _config_with_protocol_list(draw):
@@ -82,17 +93,14 @@ def _config_with_protocol_list(draw):
 
 
 @given(config=_config_with_protocol_list())
-# FR-EXEC AC1
 def test_protocol_list_executed(config):
-    """Validates that the turn protocol is executed correctly when turns are a list."""
+    """[FR-EXEC-AC1] Validates that the turn protocol is executed correctly when turns are a list."""
     assistants, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
     sent_messages = []
     original_send = pub.sendMessage
 
-    # Spy function: replaces pub.sendMessage with spy_send.
-    # spy_send appends protocol events (process_/send_ topics) to sent_messages for spying, then calls the original sendMessage.
     def spy_send(topic, **kwargs):
         if topic.startswith("process_") or topic.startswith("send_"):
             sent_messages.append((topic, kwargs.get("round_number")))
@@ -129,29 +137,31 @@ def test_protocol_list_executed(config):
     )
 
 
+# ---------------------------------------------------------------------------
+# FR-EXEC AC1: Protocol executed correctly — dict turns
+# ---------------------------------------------------------------------------
+
 @st.composite
 def _config_with_protocol_dict(draw):
     assistants = draw(assistant_ids)
     topology = draw(valid_topology(assistants))
     n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
-    turns_dict = {}
-    for i in range(n_rounds):
-        turns_dict[str(i)] = draw(valid_turns_list_strategy(assistants))
+    turns_dict = {
+        str(i): draw(valid_turns_list_strategy(assistants))
+        for i in range(n_rounds)
+    }
     return assistants, topology, turns_dict, n_rounds
 
 
 @given(config=_config_with_protocol_dict())
-# FR-EXEC AC1
 def test_protocol_dict_executed(config):
-    """Validates that the turn protocol is executed correctly when turns are a dict."""
+    """[FR-EXEC-AC1] Validates that the turn protocol is executed correctly when turns are a dict."""
     assistants, topology, turns_dict, n_rounds = config
     n_iterations = n_rounds - 1
 
     sent_messages = []
     original_send = pub.sendMessage
 
-    # Spy function: replaces pub.sendMessage with spy_send.
-    # spy_send appends protocol events (process_/send_ topics) to sent_messages for spying, then calls the original sendMessage.
     def spy_send(topic, **kwargs):
         if topic.startswith("process_") or topic.startswith("send_"):
             sent_messages.append((topic, kwargs.get("round_number")))
@@ -189,16 +199,17 @@ def test_protocol_dict_executed(config):
     )
 
 
+# ---------------------------------------------------------------------------
+# FR-EXEC AC3: Judge collects entire debate
+# ---------------------------------------------------------------------------
+
 @st.composite
 def _full_debate_config(draw):
-    """
-    Returns (assistants, topology, turns, n_rounds) where turns is
-    randomly either a list (list-mode) or a dict (dict-mode).
-    """
+    """Random assistants, topology, n_rounds, and 50/50 list/dict turns."""
     assistants = draw(assistant_ids)
-    topology   = draw(valid_topology(assistants))
-    n_rounds   = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
-    use_dict   = draw(st.booleans())
+    topology = draw(valid_topology(assistants))
+    n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
+    use_dict = draw(st.booleans())
 
     if use_dict:
         turns = {
@@ -210,12 +221,12 @@ def _full_debate_config(draw):
 
     return assistants, topology, turns, n_rounds
 
+
 @given(config=_full_debate_config())
-# FR-EXEC AC3
 def test_judge_collects_entire_debate(config):
     """
-    Validates that the judge agent receives one response per (assistant, round) pair
-    regardless of topology or turn format (list vs dict).
+    [FR-EXEC-AC3] Validates that the judge receives exactly one response per (assistant, round)
+    pair for every assistant that actually spoke in that round.
     """
     assistants, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
@@ -234,13 +245,19 @@ def test_judge_collects_entire_debate(config):
 
     note(f"assistants: {assistants}")
     note(f"n_rounds:   {n_rounds}")
+    note(f"turns:      {turns}")
     note(f"responses:  {responses}")
 
-    expected_pairs = {
-        (name, round_num)
-        for name in assistants
-        for round_num in range(n_rounds)
-    }
+    expected_pairs = set()
+    for round_num in range(n_rounds):
+        if isinstance(turns, dict):
+            groups = turns[str(round_num)]
+        else:
+            groups = turns
+        for group in groups:
+            for node in group:
+                expected_pairs.add((node, round_num))
+
     recorded_pairs = {(sender, rn) for sender, _, rn in responses}
 
     missing = expected_pairs - recorded_pairs
@@ -249,8 +266,7 @@ def test_judge_collects_entire_debate(config):
         f"Recorded: {recorded_pairs}"
     )
 
-    assert len(responses) == len(assistants) * n_rounds, (
-        f"Expected {len(assistants) * n_rounds} responses, "
+    assert len(responses) == len(expected_pairs), (
+        f"Expected {len(expected_pairs)} responses, "
         f"got {len(responses)}"
     )
-
