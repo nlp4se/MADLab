@@ -200,7 +200,7 @@ class LLMCoordinator:
         requirement: str,
         responses: List,
         metrics: Dict,
-        judge: Tuple[str, str],
+        judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> Tuple[Dict, Dict, List]:
@@ -208,7 +208,7 @@ class LLMCoordinator:
         
         decisions = {}
         judge_metrics = {}
-        judge_name, judge_model = judge
+        judge_name = judge
         thread_id = self.caller.create_thread()
 
         print("\nJudge decisions:")
@@ -232,7 +232,6 @@ class LLMCoordinator:
                 raw_decision, judge_metrics_iter = self.caller.send_message(
                     judge_input,
                     assistant_name=judge_name,
-                    model=judge_model,
                     temperature=temperature,
                     thread_id=thread_id
                 )
@@ -263,7 +262,7 @@ class LLMCoordinator:
         assistants: List[str],
         topology: Dict[str, List[str]],
         turns: Any,
-        judge: Tuple[str, str],
+        judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> None:
@@ -412,7 +411,9 @@ def main():
     topology = interaction_config["topology"]
 
     with open(args.judge_file) as f:
-        judge = json.load(f)  # Expected: ["judge_name", "model"]
+        judge_config = json.load(f)
+
+    judge = judge_config['judge_name'] 
 
 
     coordinator.process_dataset(

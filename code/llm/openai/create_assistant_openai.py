@@ -31,8 +31,8 @@ class OpenAIAssistantCreator(AssistantCreator):
             response_format=self.get_json_schema(schema_file_path)
         )
         
-        self.save_assistant_id(assistant.id, model)
-        print(f"Assistant created successfully. Assistant ID: {assistant.id}")
+        self.save_assistant_id(assistant.id)
+        print(f"Assistant created successfully. Assistant ID: {assistant.id} with Model: {model}")
         return assistant
 
 def main():

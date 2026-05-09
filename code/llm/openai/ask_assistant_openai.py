@@ -15,9 +15,9 @@ class OpenAIAssistantCaller(AssistantCaller):
         """Create a new thread for conversation persistence."""
         return self.client.beta.threads.create().id
 
-    def get_assistant_id(self, model: str, assistant_name: str) -> str:
+    def get_assistant_id(self, assistant_name: str) -> str:
         """Load assistant ID from file."""
-        filename = f"data/assistants/assistant_{assistant_name}_{model}.txt"
+        filename = f"data/assistants/assistant_{assistant_name}.txt"
         with open(filename, 'r') as file:
             return file.read().strip()
 
@@ -34,10 +34,9 @@ class OpenAIAssistantCaller(AssistantCaller):
             - Dictionary with token usage information
         """
         assistant_name = kwargs.get('assistant_name', 'placeholder_assistant')
-        model = kwargs.get('model', 'gpt-4')
         temperature = kwargs.get('temperature', 0)
         
-        assistant_id = self.get_assistant_id(model, assistant_name)
+        assistant_id = self.get_assistant_id(assistant_name)
         thread_id = kwargs.get('thread_id', self.create_thread())
 
         try:
@@ -127,7 +126,6 @@ def main():
     metrics = caller.process_with_metrics(
         message,
         assistant_name=args.assistant_name,
-        model=args.model
     )
     
     # Print the response
