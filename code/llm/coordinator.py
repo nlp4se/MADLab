@@ -209,6 +209,8 @@ class LLMCoordinator:
         decisions = {}
         judge_metrics = {}
         judge_name, judge_model = judge
+        thread_id = self.caller.create_thread()
+
         print("\nJudge decisions:")
         print("-"*40)
         for n in range(n_iterations + 1):

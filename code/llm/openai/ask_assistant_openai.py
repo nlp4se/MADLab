@@ -38,7 +38,7 @@ class OpenAIAssistantCaller(AssistantCaller):
         temperature = kwargs.get('temperature', 0)
         
         assistant_id = self.get_assistant_id(model, assistant_name)
-        thread_id = self.create_thread()
+        thread_id = kwargs.get('thread_id', self.create_thread())
 
         try:
             # Create message in thread
