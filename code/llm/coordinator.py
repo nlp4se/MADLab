@@ -78,17 +78,6 @@ class AssistantAgent:
         return "\n\n".join(debate_input_parts)
 
     def _call_api(self, debate_input: str) -> tuple:
-        """
-        metrics = {
-            'prompt_tokens': 0,
-            'completion_tokens': 0,
-            'total_tokens': 0,
-            'execution_time': 0
-        }
-        response = f"Response from {self.name}: "
-        return response, metrics
-        """
-        #"""
         while True:
             response, metrics = self.caller.send_message(
                 debate_input,
@@ -98,7 +87,6 @@ class AssistantAgent:
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
                 return response, metrics        
-        #"""
 
     def send_response(self, round_number: int):
         if self.response_ready_to_send:
@@ -221,12 +209,6 @@ class LLMCoordinator:
             ])
             
             judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
-            
-            # Add retry logic for judge responses
-            #"""
-            raw_decision = '{"class": 0}'               # Example: class 0
-            judge_metrics_iter = {key: 0.0 for key in metrics}  # Dummy metrics, all zero
-            #"""
 
             while True:
                 raw_decision, judge_metrics_iter = self.caller.send_message(
