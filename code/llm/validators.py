@@ -57,7 +57,10 @@ def validate_turns(interaction_config):
         
         if actual_keys != expected_keys:
             raise ValueError(f"Configuration Error: Keys in 'turns' dict must go strictly from 0 to {n_iterations}. Found: {actual_keys}. Expected: {expected_keys}")
-            
+
+        if actual_keys == set():
+            raise ValueError(f"Configuration Error: 'turns' dict cannot be empty. It must contain at least one round with key '0'.")
+
         for i in range(n_iterations + 1):
             rounds_to_check.append(turns[str(i)])
             

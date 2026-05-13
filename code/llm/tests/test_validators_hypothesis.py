@@ -258,6 +258,17 @@ def test_list_turns_agent_twice_same_round(assistants):
 # FR-PROT: DICT branch
 # ---------------------------------------------------------------------------
 
+def test_dict_turns_empty_dict_rejected():
+    """[FR-PROT-AC2] Validates that an empty turns dict is rejected."""
+    config = {
+        "assistants": ["a", "b"],
+        "topology": {"a": ["b"], "b": ["a"]},
+        "turns": {},
+    }
+    with pytest.raises(ValueError, match="at least one round with key '0'"):
+        validate_interaction_file(config)
+
+
 @given(assistants=assistant_ids)
 def test_dict_turns_non_consecutive_keys(assistants):
     """[FR-PROT-AC2] Hits: actual_keys != expected_keys (aquí falta '1')."""
