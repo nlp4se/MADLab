@@ -6,7 +6,7 @@ and that the judge agent collects the full debate history.
 
 from unittest.mock import patch, MagicMock
 from hypothesis import given, note, strategies as st
-from code.llm.coordinator import LLMCoordinator, AssistantAgent
+from code.llm.coordinator import LLMCoordinator, DebaterAgent
 from pubsub import pub
 from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
 
@@ -48,14 +48,14 @@ def test_messages_respect_topology(config):
     """
     assistants, topology, turns = config
 
-    original_receive = AssistantAgent.receive_data
+    original_receive = DebaterAgent.receive_data
     received_messages = []
 
     def spy_receive(self, sender, content, round_number=None):
         received_messages.append((self.name, sender, content))
         original_receive(self, sender, content, round_number)
 
-    with patch.object(AssistantAgent, "receive_data", spy_receive):
+    with patch.object(DebaterAgent, "receive_data", spy_receive):
 
         coordinator = LLMCoordinator(caller=_make_mock_caller())
         coordinator.run_debate(
