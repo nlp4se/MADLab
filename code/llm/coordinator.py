@@ -96,7 +96,8 @@ class AssistantAgent:
 
 
 class JudgeAgent:
-    def __init__(self, channels_to_listen: List[str]):
+    def __init__(self, name: str, channels_to_listen: List[str], caller: AssistantCaller, thread_id: str, temperature: float = 0):
+        self.name = name
         self.responses = []
         self.total_metrics = {
             'prompt_tokens': 0,
@@ -104,11 +105,26 @@ class JudgeAgent:
             'total_tokens': 0,
             'execution_time': 0
         }
-        
+        self.caller = caller
+        self.temperature = temperature
+        self.thread_id = thread_id
+
         for channel in channels_to_listen:
             pub.subscribe(self.register_response, channel)
-            
+
         pub.subscribe(self.register_metrics, "metrics_channel")
+
+    def _call_api(self, judge_input: str) -> tuple:
+        while True:
+            response, metrics = self.caller.send_message(
+                judge_input,
+                assistant_name=self.name,
+                temperature=self.temperature,
+                thread_id=self.thread_id
+            )
+            if "Run status: failed" not in response and "Run status: expired" not in response:
+                return response, metrics
+            print(f"Retrying failed/expired message for judge...")
 
     def register_response(self, sender: str, content: str, round_number: int):
         self.responses.append((sender, content, round_number))
@@ -123,20 +139,27 @@ class LLMCoordinator:
     def __init__(self, caller: AssistantCaller):
         """Initialize the coordinator with an AssistantCaller instance."""
         self.caller = caller
-    
+
     def run_debate(
         self,
         requirement: str,
         assistants: List[str],
         topology: Dict[str, List[str]],
         turns: Any,
+        judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> Tuple[List, Dict]:
         """Execute the debate between assistants and return responses and metrics."""
         # Clear previous subscriptions and instantiate Judge Node to collect all debate responses and metrics
         pub.unsubAll()
-        monitor = JudgeAgent(channels_to_listen=assistants)
+        self.judge = JudgeAgent(
+            name=judge,
+            channels_to_listen=assistants,
+            caller=self.caller,
+            temperature=temperature,
+            thread_id=self.caller.create_thread()
+        )
 
         # Create threads (OpenAI API requirement)
         assistant_threads = {
@@ -179,8 +202,8 @@ class LLMCoordinator:
                     pub.sendMessage(f"send_{node_name}", round_number=round_num)
 
         # Debate finished, retrieve history
-        responses = monitor.responses
-        metrics = monitor.total_metrics
+        responses = self.judge.responses
+        metrics = self.judge.total_metrics
 
         return responses, metrics
 
@@ -189,7 +212,6 @@ class LLMCoordinator:
         requirement: str,
         responses: List,
         metrics: Dict,
-        judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> Tuple[Dict, Dict, List]:
@@ -197,8 +219,6 @@ class LLMCoordinator:
         
         decisions = {}
         judge_metrics = {}
-        judge_name = judge
-        thread_id = self.caller.create_thread()
 
         print("\nJudge decisions:")
         print("-"*40)
@@ -208,19 +228,10 @@ class LLMCoordinator:
                 f"Round {round_num} - Assistant '{name}' response:\n{response}"
                 for name, response, round_num in filtered_responses
             ])
-            
+
             judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
 
-            while True:
-                raw_decision, judge_metrics_iter = self.caller.send_message(
-                    judge_input,
-                    assistant_name=judge_name,
-                    temperature=temperature,
-                    thread_id=thread_id
-                )
-                if "Run status: failed" not in raw_decision and "Run status: expired" not in raw_decision:
-                    break
-                print(f"Retrying failed/expired message for judge...")
+            raw_decision, judge_metrics_iter = self.judge._call_api(judge_input)
 
             try:
                 decision_obj = json.loads(raw_decision)
@@ -300,16 +311,16 @@ class LLMCoordinator:
                     assistants,
                     topology,
                     turns,
+                    judge,
                     temperature,
                     n_iterations
                 )
-                
+
                 # Analyze debate results with judge
                 decisions, metrics, responses = self.judge_approach(
                     requirement,
                     responses,
                     metrics,
-                    judge,
                     temperature,
                     n_iterations
                 )
