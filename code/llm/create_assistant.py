@@ -16,9 +16,9 @@ class AssistantCreator(ABC):
         """Initialize the specific AI provider's client."""
         pass
     
-    def save_assistant_id(self, assistant_id: str, model: str):
+    def save_assistant_id(self, assistant_id: str):
         """Save the assistant ID to a file for reuse."""
-        filename = f"data/assistants/assistant_{self.assistant_name}_{model}.txt"
+        filename = f"data/assistants/assistant_{self.assistant_name}.txt"
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w') as file:

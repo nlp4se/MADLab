@@ -1,1 +1,3 @@
-["judge-debater", "gpt-4o"]
+{
+    "judge_name": "judge-debater"
+}
