@@ -11,13 +11,14 @@ from tqdm import tqdm
 import time
 from pubsub import pub
 
+from .ask_assistant import AssistantCaller
 from .openai.ask_assistant_openai import OpenAIAssistantCaller
 
 load_dotenv()
 
 
 class AssistantAgent:
-    def __init__(self, name: str, thread_id: str, caller: OpenAIAssistantCaller, temperature: float, channels_to_listen: List[str]):
+    def __init__(self, name: str, thread_id: str, caller: AssistantCaller, temperature: float, channels_to_listen: List[str]):
         self.name = name
         self.thread_id = thread_id
         self.caller = caller
@@ -119,9 +120,9 @@ class JudgeAgent:
 
 
 class LLMCoordinator:
-    def __init__(self, api_key: str):
-        """Initialize the coordinator with an API key."""
-        self.caller = OpenAIAssistantCaller(api_key=api_key)
+    def __init__(self, caller: AssistantCaller):
+        """Initialize the coordinator with an AssistantCaller instance."""
+        self.caller = caller
     
     def run_debate(
         self,
@@ -367,7 +368,8 @@ def main():
     args = parser.parse_args()
 
     # Initialize coordinator
-    coordinator = LLMCoordinator(api_key=os.getenv("OPENAI_API_KEY"))
+    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"))
+    coordinator = LLMCoordinator(caller=caller)
 
     # Load configurations
     with open(args.interaction_file) as f:
