@@ -63,6 +63,7 @@ def test_messages_respect_topology(config):
             assistants=assistants,
             topology=topology,
             turns=turns,
+            judge="Judge",
             n_iterations=0,
         )
 
@@ -113,6 +114,7 @@ def test_protocol_list_executed(config):
             assistants=assistants,
             topology=topology,
             turns=turns,
+            judge="Judge",
             n_iterations=n_iterations,
         )
 
@@ -173,6 +175,7 @@ def test_protocol_dict_executed(config):
             assistants=assistants,
             topology=topology,
             turns=turns_dict,
+            judge="Judge",
             n_iterations=n_iterations,
         )
 
@@ -234,6 +237,7 @@ def test_judge_collects_entire_debate(config):
         assistants=assistants,
         topology=topology,
         turns=turns,
+        judge="Judge",
         n_iterations=n_iterations,
     )
 
