@@ -55,10 +55,9 @@ def test_messages_respect_topology(config):
         received_messages.append((self.name, sender, content))
         original_receive(self, sender, content, round_number)
 
-    with patch("code.llm.coordinator.OpenAIAssistantCaller", return_value=_make_mock_caller()), \
-         patch.object(AssistantAgent, "receive_data", spy_receive):
+    with patch.object(AssistantAgent, "receive_data", spy_receive):
 
-        coordinator = LLMCoordinator(api_key="fake")
+        coordinator = LLMCoordinator(caller=_make_mock_caller())
         coordinator.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -106,10 +105,9 @@ def test_protocol_list_executed(config):
             sent_messages.append((topic, kwargs.get("round_number")))
         original_send(topic, **kwargs)
 
-    with patch("code.llm.coordinator.OpenAIAssistantCaller", return_value=_make_mock_caller()), \
-         patch("pubsub.pub.sendMessage", side_effect=spy_send):
+    with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        coordinator = LLMCoordinator(api_key="fake")
+        coordinator = LLMCoordinator(caller=_make_mock_caller())
         coordinator.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -167,10 +165,9 @@ def test_protocol_dict_executed(config):
             sent_messages.append((topic, kwargs.get("round_number")))
         original_send(topic, **kwargs)
 
-    with patch("code.llm.coordinator.OpenAIAssistantCaller", return_value=_make_mock_caller()), \
-         patch("pubsub.pub.sendMessage", side_effect=spy_send):
+    with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        coordinator = LLMCoordinator(api_key="fake")
+        coordinator = LLMCoordinator(caller=_make_mock_caller())
         coordinator.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -231,17 +228,14 @@ def test_judge_collects_entire_debate(config):
     assistants, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
-    with patch("code.llm.coordinator.OpenAIAssistantCaller",
-               return_value=_make_mock_caller()):
-
-        coordinator = LLMCoordinator(api_key="fake")
-        responses, metrics = coordinator.run_debate(
-            requirement="Test requirement",
-            assistants=assistants,
-            topology=topology,
-            turns=turns,
-            n_iterations=n_iterations,
-        )
+    coordinator = LLMCoordinator(caller=_make_mock_caller())
+    responses, metrics = coordinator.run_debate(
+        requirement="Test requirement",
+        assistants=assistants,
+        topology=topology,
+        turns=turns,
+        n_iterations=n_iterations,
+    )
 
     note(f"assistants: {assistants}")
     note(f"n_rounds:   {n_rounds}")
