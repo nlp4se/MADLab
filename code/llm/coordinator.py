@@ -17,7 +17,7 @@ from .openai.ask_assistant_openai import OpenAIAssistantCaller
 load_dotenv()
 
 
-class AssistantAgent:
+class DebaterAgent:
     def __init__(self, name: str, thread_id: str, caller: AssistantCaller, temperature: float, channels_to_listen: List[str]):
         self.name = name
         self.thread_id = thread_id
@@ -36,7 +36,7 @@ class AssistantAgent:
         pub.subscribe(self.process_and_clear, f"process_{self.name}")
         pub.subscribe(self.send_response, f"send_{self.name}")
 
-    def receive_data(self, sender: str, content: str, round_number: int = None):  # The round number is required to match send_response's signature. The AssistantAgent doesn't need it, but the JudgeAgent listening on this same channel does.
+    def receive_data(self, sender: str, content: str, round_number: int = None):  # The round number is required to match send_response's signature. The DebaterAgent doesn't need it, but the JudgeAgent listening on this same channel does.
         self.inbox.append((sender, content))
 
     def process_and_clear(self, round_number: int):
@@ -170,7 +170,7 @@ class LLMCoordinator:
         instantiated_nodes = {}
         for name in assistants:
             edges = topology.get(name, [])
-            instantiated_nodes[name] = AssistantAgent(
+            instantiated_nodes[name] = DebaterAgent(
                 name=name,
                 thread_id=assistant_threads[name],
                 caller=self.caller,
