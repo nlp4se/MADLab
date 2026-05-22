@@ -14,7 +14,7 @@ from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy
 def _make_mock_caller():
     mock_caller = MagicMock()
     mock_caller.create_thread.return_value = "fake-thread-id"
-    mock_caller.send_message.return_value = ("mocked response", {
+    mock_caller.submit_message.return_value = ("mocked response", {
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,

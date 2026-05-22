@@ -13,6 +13,7 @@ from pubsub import pub
 
 from .ask_assistant import AssistantCaller
 from .openai.ask_assistant_openai import OpenAIAssistantCaller
+from ..persistence.assistant_file import AssistantFile
 
 load_dotenv()
 
@@ -80,14 +81,14 @@ class DebaterAgent:
 
     def _call_api(self, debate_input: str) -> tuple:
         while True:
-            response, metrics = self.caller.send_message(
+            response, metrics = self.caller.submit_message(
                 debate_input,
                 assistant_name=self.name,
                 temperature=self.temperature,
                 thread_id=self.thread_id
             )
             if "Run status: failed" not in response and "Run status: expired" not in response:
-                return response, metrics        
+                return response, metrics
 
     def send_response(self, round_number: int):
         if self.response_ready_to_send:
@@ -116,7 +117,7 @@ class JudgeAgent:
 
     def _call_api(self, judge_input: str) -> tuple:
         while True:
-            response, metrics = self.caller.send_message(
+            response, metrics = self.caller.submit_message(
                 judge_input,
                 assistant_name=self.name,
                 temperature=self.temperature,
@@ -379,7 +380,7 @@ def main():
     args = parser.parse_args()
 
     # Initialize coordinator
-    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"))
+    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"), assistant_file=AssistantFile())
     coordinator = LLMCoordinator(caller=caller)
 
     # Load configurations

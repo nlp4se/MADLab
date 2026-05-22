@@ -1,53 +1,29 @@
-from openai import OpenAI
-import json
-import os
 import time
+from openai import OpenAI, NotFoundError
 from typing import Any, Dict, Tuple
-from dotenv import load_dotenv
+
 from ..ask_assistant import AssistantCaller
-import argparse
+from ...persistence.assistant_file import AssistantFile
+
 
 class OpenAIAssistantCaller(AssistantCaller):
     def _initialize_client(self) -> OpenAI:
         return OpenAI(api_key=self.api_key)
 
     def create_thread(self) -> str:
-        """Create a new thread for conversation persistence."""
         return self.client.beta.threads.create().id
 
-    def get_assistant_id(self, assistant_name: str) -> str:
-        """Load assistant ID from file."""
-        filename = f"data/assistants/assistant_{assistant_name}.txt"
-        with open(filename, 'r') as file:
-            return file.read().strip()
-
-    def send_message(self, message: str, **kwargs) -> Tuple[str, Dict]:
-        """Send a message to the assistant and get the response.
-        
-        Args:
-            message: The message to send to the assistant
-            **kwargs: Additional arguments including assistant_name and model
-            
-        Returns:
-            Tuple containing:
-            - Assistant's response as a string
-            - Dictionary with token usage information
-        """
-        assistant_name = kwargs.get('assistant_name', 'placeholder_assistant')
+    def send_message(self, message: str, assistant_id: str, **kwargs) -> Tuple[str, Dict]:
         temperature = kwargs.get('temperature', 0)
-        
-        assistant_id = self.get_assistant_id(assistant_name)
         thread_id = kwargs.get('thread_id', self.create_thread())
 
         try:
-            # Create message in thread
             self.client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
                 content=message
             )
 
-            # Create and monitor run
             run = self.client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=assistant_id,
@@ -56,14 +32,13 @@ class OpenAIAssistantCaller(AssistantCaller):
 
             while True:
                 run_status = self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id, 
+                    thread_id=thread_id,
                     run_id=run.id
                 )
                 if run_status.status == "completed":
                     break
                 elif run_status.status not in ["in_progress", "queued"]:
                     print(f"Run status: {run_status.status}")
-                    # Return the error status so the coordinator can retry
                     return f"Run status: {run_status.status}", {
                         'prompt_tokens': 0,
                         'completion_tokens': 0,
@@ -71,11 +46,9 @@ class OpenAIAssistantCaller(AssistantCaller):
                     }
                 time.sleep(2)
 
-            # Get response
             messages = self.client.beta.threads.messages.list(thread_id=thread_id)
             response = messages.data[0].content[0].text.value
 
-            # Collect usage statistics
             usage_metadata = {
                 'prompt_tokens': getattr(run_status.usage, "prompt_tokens", 0),
                 'completion_tokens': getattr(run_status.usage, "completion_tokens", 0),
@@ -84,6 +57,18 @@ class OpenAIAssistantCaller(AssistantCaller):
 
             return response, usage_metadata
 
+        except NotFoundError:
+            error_msg = (
+                f"Assistant with ID '{assistant_id}' not found in OpenAI. "
+                f"It may have been deleted externally. "
+                f"Remove the corresponding assistant file and recreate the assistant."
+            )
+            print(f"Error: {error_msg}")
+            return f"Run status: failed - {error_msg}", {
+                'prompt_tokens': 0,
+                'completion_tokens': 0,
+                'total_tokens': 0
+            }
         except Exception as e:
             print(f"Error processing message: {e}")
             return f"Run status: failed - {str(e)}", {
@@ -91,49 +76,3 @@ class OpenAIAssistantCaller(AssistantCaller):
                 'completion_tokens': 0,
                 'total_tokens': 0
             }
-
-def main():
-    load_dotenv()
-    
-    parser = argparse.ArgumentParser(description='Send a message to an OpenAI assistant.')
-    parser.add_argument('--assistant_name', 
-                       default='placeholder_assistant',
-                       help='Name of the assistant to use')
-    parser.add_argument('--model', 
-                       default='gpt-4o',
-                       help='Model to use (e.g., gpt-4o)')
-    parser.add_argument('--prompt_file_path',
-                        default='data/prompts/discussant/user-prompt.txt',
-                       help='Path to the file containing the prompt')
-    
-    args = parser.parse_args()
-    
-    # Read prompt from file
-    try:
-        with open(args.prompt_file_path, 'r') as file:
-            message = file.read().strip()
-    except FileNotFoundError:
-        print(f"Error: Prompt file '{args.prompt_file_path}' not found.")
-        return
-    except Exception as e:
-        print(f"Error reading prompt file: {e}")
-        return
-    
-    # Initialize the caller
-    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"))
-    
-    # Process the message and get metrics
-    metrics = caller.process_with_metrics(
-        message,
-        assistant_name=args.assistant_name,
-    )
-    
-    # Print the response
-    if metrics['success']:
-        print("\nAssistant's response:")
-        print(metrics['response'])
-    else:
-        print("\nError:", metrics['error'])
-
-if __name__ == "__main__":
-    main() 

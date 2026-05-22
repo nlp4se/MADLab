@@ -3,6 +3,7 @@ import os
 from tqdm import tqdm
 import argparse
 from ..llm.openai.ask_assistant_openai import OpenAIAssistantCaller
+from ..persistence.assistant_file import AssistantFile
 from dotenv import load_dotenv
 
 def process_dataset(
@@ -27,7 +28,7 @@ def process_dataset(
     
     # Initialize OpenAI assistant
     load_dotenv()
-    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"))
+    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"), assistant_file=AssistantFile())
     
     # Create output folder if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
@@ -47,8 +48,8 @@ def process_dataset(
         requirements = batch['requirement'].tolist()
         
         # Send to assistant
-        response, _ = caller.send_message(
-            str(requirements),  # Convert array to string representation
+        response, _ = caller.submit_message(
+            str(requirements),
             assistant_name=assistant_name,
             model=model
         )
