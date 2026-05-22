@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from tqdm import tqdm
 import argparse
-from ..llm.openai.ask_assistant_openai import OpenAIAssistantCaller
+from ..llm.openai.openai_assistant_caller import OpenAIAssistantCaller
 from ..persistence.assistant_file import AssistantFile
 from dotenv import load_dotenv
 

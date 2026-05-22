@@ -5,7 +5,7 @@ from openai import OpenAI, NotFoundError
 from typing import Dict, Any
 from dotenv import load_dotenv
 
-from ..create_assistant import AssistantManager
+from ..assistant_manager import AssistantManager
 from ...persistence.assistant_file import AssistantFile
 from ...persistence.prompt_file import PromptFile
 

@@ -2,7 +2,7 @@ import time
 from openai import OpenAI, NotFoundError
 from typing import Any, Dict, Tuple
 
-from ..ask_assistant import AssistantCaller
+from ..assistant_caller import AssistantCaller
 from ...persistence.assistant_file import AssistantFile
 
 

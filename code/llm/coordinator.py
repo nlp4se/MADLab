@@ -11,8 +11,8 @@ from tqdm import tqdm
 import time
 from pubsub import pub
 
-from .ask_assistant import AssistantCaller
-from .openai.ask_assistant_openai import OpenAIAssistantCaller
+from .assistant_caller import AssistantCaller
+from .openai.openai_assistant_caller import OpenAIAssistantCaller
 from ..persistence.assistant_file import AssistantFile
 
 load_dotenv()
