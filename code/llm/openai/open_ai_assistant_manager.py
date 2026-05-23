@@ -1,7 +1,7 @@
 import os
 import argparse
 import json
-from openai import OpenAI, NotFoundError
+from openai import OpenAI, NotFoundError, BadRequestError
 from typing import Dict, Any
 from dotenv import load_dotenv
 
@@ -63,6 +63,13 @@ class OpenAIAssistantManager(AssistantManager):
                 f"OpenAI Assistant referenced by AssistantRecord '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
                 f"The AssistantRecord may be stale. Run 'delete-invalid' to clean up orphaned records."
             )
+        except BadRequestError as e:
+            if e.code == 'invalid_value':
+                raise ValueError(
+                    f"AssistantRecord '{self.assistant_name}' contains an invalid OpenAI Assistant ID: '{assistant_id}'. "
+                    f"The record is corrupted. Run 'delete-invalid' to clean up orphaned records."
+                )
+            raise
         
     def get_all_assistant_records(self) -> None:
         assistant_records = self.assistant_file.get_all_assistant_records()
