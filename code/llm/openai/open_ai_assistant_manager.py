@@ -68,16 +68,17 @@ class OpenAIAssistantManager(AssistantManager):
         assistant_records = self.assistant_file.get_all_assistant_records()
         print(f"AssistantRecords:")
         for record_name in assistant_records:
-            print(f"AssistantRecord Name: {record_name}")
+            print(f"Name: {record_name}")
         if not assistant_records:
             print("No AssistantRecords were found in local storage.")
 
     def delete_invalid_assistants(self) -> None:
-        openai_assistants = self.client.beta.assistants.list()
+        openai_assistant_names = {assistant.name for assistant in self.client.beta.assistants.list()}
         assistant_records = self.assistant_file.get_all_assistant_records()
-        orphaned_records = [name for name in assistant_records if not any(assistant.name == name for assistant in openai_assistants)]
+        orphaned_records = [name for name in assistant_records if name not in openai_assistant_names]
         print(f"AssistantRecords with no matching OpenAI Assistant: {orphaned_records} were deleted from local storage.")
-        self.assistant_file.delete_assistant_record(orphaned_records)
+        for name in orphaned_records:
+            self.assistant_file.delete_assistant_record(name)
       
 
 
