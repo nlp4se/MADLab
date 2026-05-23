@@ -81,8 +81,13 @@ class OpenAIAssistantManager(AssistantManager):
 
     def delete_invalid_assistants(self) -> None:
         openai_assistants: dict[str, set[str]] = {}
-        for assistant in self.client.beta.assistants.list():
-            openai_assistants.setdefault(assistant.name, set()).add(assistant.id)
+        page = self.client.beta.assistants.list(limit=100)
+        while True:
+            for assistant in page.data:
+                openai_assistants.setdefault(assistant.name, set()).add(assistant.id)
+            if not page.has_next_page():
+                break
+            page = page.get_next_page()
         print("OpenAI Assistants found:")
         for name, ids in openai_assistants.items():
             print(f"  {name}: {sorted(ids)}")
