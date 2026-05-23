@@ -63,6 +63,20 @@ class OpenAIAssistantManager(AssistantManager):
                 f"Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
                 f"It may have been deleted externally."
             )
+        
+    def get_all_assistants(self) -> None:
+        local_assistants = self.assistant_file.get_all_assistants()
+        print(f"Assistants:")
+        for assistant_name in local_assistants:
+            print(f"Assistant Name: {assistant_name}")
+
+    def delete_invalid_assistants(self) -> None:
+        OpenAI_assistants = self.client.beta.assistants.list()
+        local_assistants = self.assistant_file.get_all_assistants()
+        local_assistants_not_in_OpenAI = [name for name in local_assistants if not any(assistant.name == name for assistant in OpenAI_assistants)]
+        print(f"Assistants not found in OpenAI: local_assistants_not_found_in_OpenAI = {local_assistants_not_in_OpenAI} are being deleted from local storage.")
+        self.assistant_file.delete_assistant(local_assistants_not_in_OpenAI)
+      
 
 
 def main():
@@ -88,6 +102,10 @@ def main():
     get_model_parser = subparsers.add_parser('get-model', help='Get the current model of an assistant')
     get_model_parser.add_argument('--assistant-name', required=True, help='Name of the assistant')
 
+    get_all_parser = subparsers.add_parser('get-all', help='Get all the existing assistants')
+    delete_invalid_parser = subparsers.add_parser('delete-invalid', help='Remove the local assistants not existing in OpenAI')
+
+
     args = parser.parse_args()
 
     manager = OpenAIAssistantManager(
@@ -112,7 +130,10 @@ def main():
     elif args.action == 'get-model':
         model = manager.get_model()
         print(f"Assistant '{args.assistant_name}' is using model: '{model}'")
-
+    elif args.action == 'get-all':
+        manager.get_all()
+    elif args.action == 'delete-invalid':
+        manager.delete_invalid_assistants()
 
 if __name__ == "__main__":
     main()

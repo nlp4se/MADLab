@@ -30,6 +30,15 @@ class AssistantFile:
         with open(self._path(assistant_name), 'w') as f:
             f.write(assistant_id)
 
+    def get_all_assistants(self) -> list[str]:
+        if not os.path.exists(self.base_dir):
+            return []
+        names = []
+        for filename in os.listdir(self.base_dir):
+            if filename.startswith("assistant_") and filename.endswith(".txt"):
+                names.append(filename[len("assistant_"):-len(".txt")])
+        return names
+
     def delete_assistant(self, assistant_name: str) -> bool:
         path = self._path(assistant_name)
         if not os.path.exists(path):
