@@ -29,6 +29,8 @@ class AssistantFile:
         os.makedirs(self.base_dir, exist_ok=True)
         with open(self._path(assistant_name), 'w') as f:
             f.write(assistant_id)
+        print(f"AssistantRecord '{assistant_name}' saved locally with ID: '{assistant_id}'")
+
 
     def get_all_assistant_records(self) -> list[str]:
         if not os.path.exists(self.base_dir):

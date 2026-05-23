@@ -27,8 +27,8 @@ class OpenAIAssistantManager(AssistantManager):
             return assistant.model
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
-                f"It may have been deleted externally."
+                f"OpenAI Assistant referenced by AssistantRecord '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"The AssistantRecord may be stale. Run 'delete-invalid' to clean up orphaned records."
             )
 
     def create_assistant(self, instructions: str, model: str = "gpt-4o", **kwargs) -> str:
@@ -51,8 +51,8 @@ class OpenAIAssistantManager(AssistantManager):
             self.client.beta.assistants.update(assistant_id, model=new_model)
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
-                f"It may have been deleted externally."
+                f"OpenAI Assistant referenced by AssistantRecord '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"The AssistantRecord may be stale. Run 'delete-invalid' to clean up orphaned records."
             )
 
     def delete_assistant_service(self, assistant_id: str) -> None:
@@ -60,50 +60,52 @@ class OpenAIAssistantManager(AssistantManager):
             self.client.beta.assistants.delete(assistant_id)
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
-                f"It may have been deleted externally."
+                f"OpenAI Assistant referenced by AssistantRecord '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"The AssistantRecord may be stale. Run 'delete-invalid' to clean up orphaned records."
             )
         
-    def get_all_assistants(self) -> None:
-        local_assistants = self.assistant_file.get_all_assistant_records()
+    def get_all_assistant_records(self) -> None:
+        assistant_records = self.assistant_file.get_all_assistant_records()
         print(f"AssistantRecords:")
-        for assistant_name in local_assistants:
-            print(f"AssistantRecord Name: {assistant_name}")
+        for record_name in assistant_records:
+            print(f"AssistantRecord Name: {record_name}")
+        if not assistant_records:
+            print("No AssistantRecords were found in local storage.")
 
     def delete_invalid_assistants(self) -> None:
-        OpenAI_assistants = self.client.beta.assistants.list()
-        local_assistants = self.assistant_file.get_all_assistant_records()
-        local_assistants_not_in_OpenAI = [name for name in local_assistants if not any(assistant.name == name for assistant in OpenAI_assistants)]
-        print(f"AssistantRecords with no matching OpenAI Assistant: {local_assistants_not_in_OpenAI} are being deleted from local storage.")
-        self.assistant_file.delete_assistant_record(local_assistants_not_in_OpenAI)
+        openai_assistants = self.client.beta.assistants.list()
+        assistant_records = self.assistant_file.get_all_assistant_records()
+        orphaned_records = [name for name in assistant_records if not any(assistant.name == name for assistant in openai_assistants)]
+        print(f"AssistantRecords with no matching OpenAI Assistant: {orphaned_records} were deleted from local storage.")
+        self.assistant_file.delete_assistant_record(orphaned_records)
       
 
 
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(description='Manage OpenAI assistants.')
+    parser = argparse.ArgumentParser(description='Manage OpenAI Assistants and local AssistantRecords.')
     subparsers = parser.add_subparsers(dest='action', required=True)
 
-    create_parser = subparsers.add_parser('create', help='Create a new assistant')
-    create_parser.add_argument('--assistant-name', required=True, help='Name of the assistant')
+    create_parser = subparsers.add_parser('create', help='Create a new OpenAI Assistant and register its AssistantRecord')
+    create_parser.add_argument('--assistant-name', required=True, help='Name of the OpenAI Assistant / AssistantRecord')
     create_parser.add_argument('--prompt-path', required=True,
                                help='Prompt path relative to data/prompts/')
     create_parser.add_argument('--model', default="gpt-4o", help='OpenAI model to use')
     create_parser.add_argument('--temperature', type=float, default=0.0, help='Temperature (0.0 to 2.0)')
     create_parser.add_argument('--schema-file-path', help='Path to JSON schema file')
 
-    delete_parser = subparsers.add_parser('delete', help='Delete an existing assistant')
-    delete_parser.add_argument('--assistant-name', required=True, help='Name of the assistant')
+    delete_parser = subparsers.add_parser('delete', help='Delete an existing OpenAI Assistant and its AssistantRecord')
+    delete_parser.add_argument('--assistant-name', required=True, help='Name of the OpenAI Assistant / AssistantRecord')
 
-    change_model_parser = subparsers.add_parser('change-model', help='Change the model of an existing assistant')
-    change_model_parser.add_argument('--assistant-name', required=True, help='Name of the assistant')
+    change_model_parser = subparsers.add_parser('change-model', help='Change the model of an existing OpenAI Assistant')
+    change_model_parser.add_argument('--assistant-name', required=True, help='Name of the OpenAI Assistant')
     change_model_parser.add_argument('--model', required=True, help='New OpenAI model to use')
 
-    get_model_parser = subparsers.add_parser('get-model', help='Get the current model of an assistant')
-    get_model_parser.add_argument('--assistant-name', required=True, help='Name of the assistant')
+    get_model_parser = subparsers.add_parser('get-model', help='Get the current model of an OpenAI Assistant')
+    get_model_parser.add_argument('--assistant-name', required=True, help='Name of the OpenAI Assistant')
 
-    get_all_parser = subparsers.add_parser('get-all', help='Get all the existing assistants')
-    delete_invalid_parser = subparsers.add_parser('delete-invalid', help='Remove the local assistants not existing in OpenAI')
+    get_all_parser = subparsers.add_parser('get-all', help='List all local AssistantRecords')
+    delete_invalid_parser = subparsers.add_parser('delete-invalid', help='Delete AssistantRecords with no matching OpenAI Assistant')
 
 
     args = parser.parse_args()
@@ -126,12 +128,12 @@ def main():
         manager.delete_assistant()
     elif args.action == 'change-model':
         manager.change_model(args.model)
-        print(f"Model updated to '{args.model}' for assistant '{args.assistant_name}'")
+        print(f"Model updated to '{args.model}' for OpenAI Assistant '{args.assistant_name}'")
     elif args.action == 'get-model':
         model = manager.get_model()
-        print(f"Assistant '{args.assistant_name}' is using model: '{model}'")
+        print(f"OpenAI Assistant '{args.assistant_name}' is using model: '{model}'")
     elif args.action == 'get-all':
-        manager.get_all()
+        manager.get_all_assistant_records()
     elif args.action == 'delete-invalid':
         manager.delete_invalid_assistants()
 
