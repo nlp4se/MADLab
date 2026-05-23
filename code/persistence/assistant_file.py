@@ -2,7 +2,7 @@ import os
 
 
 class AssistantFile:
-    def __init__(self, base_dir: str = "data/assistants"):
+    def __init__(self, base_dir: str = "data/assistant_records"):
         self.base_dir = base_dir
 
     def _path(self, assistant_name: str) -> str:
