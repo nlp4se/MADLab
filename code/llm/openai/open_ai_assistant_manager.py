@@ -21,13 +21,13 @@ class OpenAIAssistantManager(AssistantManager):
         return None
 
     def get_model(self) -> str:
-        assistant_id = self.assistant_file.get_assistant_id(self.assistant_name)
+        assistant_id = self.assistant_file.get_assistant_record_id(self.assistant_name)
         try:
             assistant = self.client.beta.assistants.retrieve(assistant_id)
             return assistant.model
         except NotFoundError:
             raise ValueError(
-                f"Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
                 f"It may have been deleted externally."
             )
 
@@ -35,7 +35,7 @@ class OpenAIAssistantManager(AssistantManager):
         temperature = kwargs.get('temperature', 0.0)
         schema_file_path = kwargs.get('schema_file_path', None)
 
-        print("Creating a new OpenAI assistant...")
+        print("Creating a new OpenAI Assistant...")
         assistant = self.client.beta.assistants.create(
             name=self.assistant_name,
             instructions=instructions,
@@ -43,7 +43,7 @@ class OpenAIAssistantManager(AssistantManager):
             temperature=temperature,
             response_format=self.get_json_schema(schema_file_path)
         )
-        print(f"Assistant created successfully. Assistant ID: {assistant.id} with Model: {model}")
+        print(f"OpenAI Assistant created successfully. ID: {assistant.id} with Model: {model}")
         return assistant.id
 
     def change_model_service(self, assistant_id: str, new_model: str) -> None:
@@ -51,7 +51,7 @@ class OpenAIAssistantManager(AssistantManager):
             self.client.beta.assistants.update(assistant_id, model=new_model)
         except NotFoundError:
             raise ValueError(
-                f"Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
                 f"It may have been deleted externally."
             )
 
@@ -60,22 +60,22 @@ class OpenAIAssistantManager(AssistantManager):
             self.client.beta.assistants.delete(assistant_id)
         except NotFoundError:
             raise ValueError(
-                f"Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
+                f"OpenAI Assistant '{self.assistant_name}' (ID: '{assistant_id}') not found in OpenAI. "
                 f"It may have been deleted externally."
             )
         
     def get_all_assistants(self) -> None:
-        local_assistants = self.assistant_file.get_all_assistants()
-        print(f"Assistants:")
+        local_assistants = self.assistant_file.get_all_assistant_records()
+        print(f"AssistantRecords:")
         for assistant_name in local_assistants:
-            print(f"Assistant Name: {assistant_name}")
+            print(f"AssistantRecord Name: {assistant_name}")
 
     def delete_invalid_assistants(self) -> None:
         OpenAI_assistants = self.client.beta.assistants.list()
-        local_assistants = self.assistant_file.get_all_assistants()
+        local_assistants = self.assistant_file.get_all_assistant_records()
         local_assistants_not_in_OpenAI = [name for name in local_assistants if not any(assistant.name == name for assistant in OpenAI_assistants)]
-        print(f"Assistants not found in OpenAI: local_assistants_not_found_in_OpenAI = {local_assistants_not_in_OpenAI} are being deleted from local storage.")
-        self.assistant_file.delete_assistant(local_assistants_not_in_OpenAI)
+        print(f"AssistantRecords with no matching OpenAI Assistant: {local_assistants_not_in_OpenAI} are being deleted from local storage.")
+        self.assistant_file.delete_assistant_record(local_assistants_not_in_OpenAI)
       
 
 

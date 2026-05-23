@@ -17,7 +17,7 @@ class AssistantCaller(ABC):
         pass
 
     def submit_message(self, message: str, assistant_name: str, **kwargs) -> Tuple[str, Dict]:
-        assistant_id = self.assistant_file.get_assistant_id(assistant_name)
+        assistant_id = self.assistant_file.get_assistant_record_id(assistant_name)
         return self.send_message(message, assistant_id, **kwargs)
 
     @abstractmethod
