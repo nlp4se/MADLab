@@ -12,7 +12,7 @@ import time
 from pubsub import pub
 
 from .assistant_caller import AssistantCaller
-from .openai.openai_assistant_caller import OpenAIAssistantCaller
+from .openai.open_ai_assistant_caller import OpenAIAssistantCaller
 from ..persistence.assistant_file import AssistantFile
 
 load_dotenv()

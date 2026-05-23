@@ -80,11 +80,36 @@ class OpenAIAssistantManager(AssistantManager):
             print("No AssistantRecords were found in local storage.")
 
     def delete_invalid_assistants(self) -> None:
-        openai_assistant_names = {assistant.name for assistant in self.client.beta.assistants.list()}
+        openai_assistants: dict[str, set[str]] = {}
+        for assistant in self.client.beta.assistants.list():
+            openai_assistants.setdefault(assistant.name, set()).add(assistant.id)
+        print("OpenAI Assistants found:")
+        for name, ids in openai_assistants.items():
+            print(f"  {name}: {sorted(ids)}")
+
         assistant_records = self.assistant_file.get_all_assistant_records()
-        orphaned_records = [name for name in assistant_records if name not in openai_assistant_names]
-        print(f"AssistantRecords with no matching OpenAI Assistant: {orphaned_records} were deleted from local storage.")
-        for name in orphaned_records:
+        print("\nAssistantRecords found in local storage:")
+        for name in assistant_records:
+            stored_id = self.assistant_file.get_assistant_record_id(name)
+            print(f"  {name}: {stored_id}")
+
+        no_name_match = []
+        id_mismatch = []
+        for name in assistant_records:
+            if name not in openai_assistants:
+                no_name_match.append(name)
+            elif self.assistant_file.get_assistant_record_id(name) not in openai_assistants[name]:
+                id_mismatch.append(name)
+
+        print("\nAssistantRecords deleted (name not found in OpenAI):")
+        for name in no_name_match:
+            print(f"  {name}")
+            self.assistant_file.delete_assistant_record(name)
+
+        print("\nAssistantRecords deleted (ID mismatch):")
+        for name in id_mismatch:
+            stored_id = self.assistant_file.get_assistant_record_id(name)
+            print(f"  {name}: local={stored_id}, OpenAI={sorted(openai_assistants[name])}")
             self.assistant_file.delete_assistant_record(name)
       
 
