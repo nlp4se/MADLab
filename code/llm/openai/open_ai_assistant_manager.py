@@ -110,9 +110,10 @@ def main():
 
     args = parser.parse_args()
 
+    assistant_name = getattr(args, 'assistant_name', None)
     manager = OpenAIAssistantManager(
         api_key=os.getenv("OPENAI_API_KEY"),
-        assistant_name=args.assistant_name,
+        assistant_name=assistant_name,
         assistant_file=AssistantFile(),
         prompt_file=PromptFile()
     )

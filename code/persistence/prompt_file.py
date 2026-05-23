@@ -66,10 +66,24 @@ class PromptFile:
 
 def main():
     parser = argparse.ArgumentParser(description='Manage prompt files.')
-    parser.add_argument('action', choices=['create', 'update', 'delete', 'get'],
-                        help='Action to perform on the prompt file')
-    parser.add_argument('prompt_path',
-                        help='Path to the prompt file relative to data/prompts/ (e.g. discussant/system-prompt.txt)')
+    subparsers = parser.add_subparsers(dest='action', required=True)
+
+    create_parser = subparsers.add_parser('create', help='Create a new prompt file')
+    create_parser.add_argument('--prompt-path', required=True,
+                               help='Path to the prompt file relative to data/prompts/ (e.g. discussant/system-prompt.txt)')
+
+    update_parser = subparsers.add_parser('update', help='Update an existing prompt file')
+    update_parser.add_argument('--prompt-path', required=True,
+                               help='Path to the prompt file relative to data/prompts/')
+
+    delete_parser = subparsers.add_parser('delete', help='Delete a prompt file')
+    delete_parser.add_argument('--prompt-path', required=True,
+                               help='Path to the prompt file relative to data/prompts/')
+
+    get_parser = subparsers.add_parser('get', help='Print the content of a prompt file')
+    get_parser.add_argument('--prompt-path', required=True,
+                            help='Path to the prompt file relative to data/prompts/')
+
     args = parser.parse_args()
 
     prompt_file = PromptFile()
