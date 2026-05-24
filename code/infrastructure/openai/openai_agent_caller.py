@@ -1,38 +1,37 @@
 import time
 from openai import OpenAI, NotFoundError
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 
-from ..assistant_caller import AssistantCaller
-from ...persistence.assistant_file import AssistantFile
+from ...core.ports.external_agent_caller import ExternalAgentCaller
 
 
-class OpenAIAssistantCaller(AssistantCaller):
-    def _initialize_client(self) -> OpenAI:
-        return OpenAI(api_key=self.api_key)
+class OpenAIAgentCaller(ExternalAgentCaller):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
 
-    def create_thread(self) -> str:
+    def start_session(self) -> str:
         return self.client.beta.threads.create().id
 
-    def send_message(self, message: str, assistant_id: str, **kwargs) -> Tuple[str, Dict]:
+    def send_message(self, message: str, assistant_id: str, session_id: str, **kwargs) -> Tuple[str, Dict]:
         temperature = kwargs.get('temperature', 0)
-        thread_id = kwargs.get('thread_id', self.create_thread())
 
         try:
             self.client.beta.threads.messages.create(
-                thread_id=thread_id,
+                thread_id=session_id,
                 role="user",
                 content=message
             )
 
             run = self.client.beta.threads.runs.create(
-                thread_id=thread_id,
+                thread_id=session_id,
                 assistant_id=assistant_id,
                 temperature=temperature
             )
 
             while True:
                 run_status = self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
+                    thread_id=session_id,
                     run_id=run.id
                 )
                 if run_status.status == "completed":
@@ -46,7 +45,7 @@ class OpenAIAssistantCaller(AssistantCaller):
                     }
                 time.sleep(2)
 
-            messages = self.client.beta.threads.messages.list(thread_id=thread_id)
+            messages = self.client.beta.threads.messages.list(thread_id=session_id)
             response = messages.data[0].content[0].text.value
 
             usage_metadata = {
@@ -61,7 +60,7 @@ class OpenAIAssistantCaller(AssistantCaller):
             error_msg = (
                 f"Assistant with ID '{assistant_id}' not found in OpenAI. "
                 f"It may have been deleted externally. "
-                f"Remove the corresponding assistant file and recreate the assistant."
+                f"Remove the corresponding AgentRecord and recreate the assistant."
             )
             print(f"Error: {error_msg}")
             return f"Run status: failed - {error_msg}", {

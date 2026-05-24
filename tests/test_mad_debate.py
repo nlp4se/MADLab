@@ -1,19 +1,19 @@
 """
 Hypothesis tests for FR-EXEC requirements.
-Verifies that coordinator properly respects topology and executes protocol,
+Verifies that MadDebate properly respects topology and executes protocol,
 and that the judge agent collects the full debate history.
 """
 
 from unittest.mock import patch, MagicMock
 from hypothesis import given, note, strategies as st
-from code.llm.coordinator import LLMCoordinator, DebaterAgent
+from code.core.mad_debate import MadDebate, DebaterAgent
 from pubsub import pub
 from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
 
 
 def _make_mock_caller():
     mock_caller = MagicMock()
-    mock_caller.create_thread.return_value = "fake-thread-id"
+    mock_caller.start_session.return_value = "fake-session-id"
     mock_caller.submit_message.return_value = ("mocked response", {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -57,8 +57,8 @@ def test_messages_respect_topology(config):
 
     with patch.object(DebaterAgent, "receive_data", spy_receive):
 
-        coordinator = LLMCoordinator(caller=_make_mock_caller())
-        coordinator.run_debate(
+        debate = MadDebate(caller=_make_mock_caller())
+        debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
             topology=topology,
@@ -108,8 +108,8 @@ def test_protocol_list_executed(config):
 
     with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        coordinator = LLMCoordinator(caller=_make_mock_caller())
-        coordinator.run_debate(
+        debate = MadDebate(caller=_make_mock_caller())
+        debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
             topology=topology,
@@ -169,8 +169,8 @@ def test_protocol_dict_executed(config):
 
     with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        coordinator = LLMCoordinator(caller=_make_mock_caller())
-        coordinator.run_debate(
+        debate = MadDebate(caller=_make_mock_caller())
+        debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
             topology=topology,
@@ -231,8 +231,8 @@ def test_judge_collects_entire_debate(config):
     assistants, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
-    coordinator = LLMCoordinator(caller=_make_mock_caller())
-    responses, metrics = coordinator.run_debate(
+    debate = MadDebate(caller=_make_mock_caller())
+    responses, metrics = debate.run_debate(
         requirement="Test requirement",
         assistants=assistants,
         topology=topology,

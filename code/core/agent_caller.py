@@ -1,28 +1,24 @@
-from abc import ABC, abstractmethod
-import time
 from datetime import datetime
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 
-from ..persistence.assistant_file import AssistantFile
+from .ports.external_agent_caller import ExternalAgentCaller
+from .ports.agent_record import AgentRecord
 
 
-class AssistantCaller(ABC):
-    def __init__(self, api_key: str, assistant_file: AssistantFile):
-        self.api_key = api_key
-        self.assistant_file = assistant_file
-        self.client = self._initialize_client()
+class AgentCaller:
+    def __init__(self, external_caller: ExternalAgentCaller, agent_record: AgentRecord):
+        self.external_caller = external_caller
+        self.agent_record = agent_record
 
-    @abstractmethod
-    def _initialize_client(self) -> Any:
-        pass
+    def start_session(self) -> str:
+        return self.external_caller.start_session()
 
     def submit_message(self, message: str, assistant_name: str, **kwargs) -> Tuple[str, Dict]:
-        assistant_id = self.assistant_file.get_assistant_record_id(assistant_name)
-        return self.send_message(message, assistant_id, **kwargs)
-
-    @abstractmethod
-    def send_message(self, message: str, assistant_id: str, **kwargs) -> Tuple[str, Dict]:
-        pass
+        assistant_id = self.agent_record.get_id(assistant_name)
+        session_id = kwargs.pop('session_id', None) or kwargs.pop('thread_id', None)
+        if session_id is None:
+            session_id = self.start_session()
+        return self.external_caller.send_message(message, assistant_id, session_id, **kwargs)
 
     def process_with_metrics(self, message: str, assistant_name: str, **kwargs) -> Dict:
         start_time = datetime.now()
