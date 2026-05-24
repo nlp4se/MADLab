@@ -33,7 +33,7 @@ def manager(ports):
 def test_setup_assistant_orchestration_order(manager, ports):
     external, agent_rec, prompt_rec = ports
     prompt_rec.get.return_value = "system instructions"
-    external.create_assistant.return_value = "asst_new"
+    external.create_assistant.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
     parent = MagicMock()
     parent.attach_mock(prompt_rec, "prompt_rec")
@@ -45,7 +45,7 @@ def test_setup_assistant_orchestration_order(manager, ports):
     expected = [
         call.prompt_rec.get("p.txt"),
         call.external.create_assistant("myAgent", "system instructions", "gpt-4o", temperature=0.5),
-        call.agent_rec.create("myAgent", "asst_new"),
+        call.agent_rec.create("myAgent", "asst_nnnnnnnnnnnnnnnnnnnnnnnn"),
     ]
     assert parent.mock_calls == expected
 
@@ -54,31 +54,31 @@ def test_setup_assistant_orchestration_order(manager, ports):
 
 def test_get_model_looks_up_id_then_delegates(manager, ports):
     external, agent_rec, _ = ports
-    agent_rec.get_id.return_value = "asst_xyz"
+    agent_rec.get_id.return_value = "asst_xxxxxxxxxxxxxxxxxxxxxxxx"
     external.get_model.return_value = "gpt-4o"
 
     assert manager.get_model() == "gpt-4o"
     agent_rec.get_id.assert_called_once_with("myAgent")
-    external.get_model.assert_called_once_with("asst_xyz")
+    external.get_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
 
 # ---------- change_model ----------
 
 def test_change_model_looks_up_id_then_delegates(manager, ports):
     external, agent_rec, _ = ports
-    agent_rec.get_id.return_value = "asst_xyz"
+    agent_rec.get_id.return_value = "asst_xxxxxxxxxxxxxxxxxxxxxxxx"
 
     manager.change_model("gpt-4o-mini")
 
     agent_rec.get_id.assert_called_once_with("myAgent")
-    external.change_model.assert_called_once_with("asst_xyz", "gpt-4o-mini")
+    external.change_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx", "gpt-4o-mini")
 
 
 # ---------- delete_assistant ----------
 
 def test_delete_assistant_orchestration_order(manager, ports):
     external, agent_rec, prompt_rec = ports
-    agent_rec.get_id.return_value = "asst_xyz"
+    agent_rec.get_id.return_value = "asst_xxxxxxxxxxxxxxxxxxxxxxxx"
 
     parent = MagicMock()
     parent.attach_mock(agent_rec, "agent_rec")
@@ -88,7 +88,7 @@ def test_delete_assistant_orchestration_order(manager, ports):
 
     expected = [
         call.agent_rec.get_id("myAgent"),
-        call.external.delete_assistant("asst_xyz"),
+        call.external.delete_assistant("asst_xxxxxxxxxxxxxxxxxxxxxxxx"),
         call.agent_rec.delete("myAgent"),
     ]
     assert parent.mock_calls == expected
@@ -136,8 +136,8 @@ def _stub_external(openai_state: dict):
 
 
 def test_delete_invalid_all_valid_deletes_nothing():
-    external = _stub_external({"alice": {"asst_a"}, "bob": {"asst_b"}})
-    agent_rec = _stub_agent_record({"alice": "asst_a", "bob": "asst_b"})
+    external = _stub_external({"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}, "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"}})
+    agent_rec = _stub_agent_record({"alice": "asst_aaaaaaaaaaaaaaaaaaaaaaaa", "bob": "asst_bbbbbbbbbbbbbbbbbbbbbbbb"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()
@@ -146,8 +146,8 @@ def test_delete_invalid_all_valid_deletes_nothing():
 
 
 def test_delete_invalid_when_name_missing_in_openai(capsys):
-    external = _stub_external({"alice": {"asst_a"}})
-    agent_rec = _stub_agent_record({"alice": "asst_a", "ghost": "asst_g"})
+    external = _stub_external({"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}})
+    agent_rec = _stub_agent_record({"alice": "asst_aaaaaaaaaaaaaaaaaaaaaaaa", "ghost": "asst_gggggggggggggggggggggggg"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()
@@ -159,8 +159,8 @@ def test_delete_invalid_when_name_missing_in_openai(capsys):
 
 
 def test_delete_invalid_when_id_mismatches(capsys):
-    external = _stub_external({"alice": {"asst_a_correct"}})
-    agent_rec = _stub_agent_record({"alice": "asst_a_wrong"})
+    external = _stub_external({"alice": {"asst_cccccccccccccccccccccccc"}})
+    agent_rec = _stub_agent_record({"alice": "asst_wwwwwwwwwwwwwwwwwwwwwwww"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()
@@ -174,8 +174,8 @@ def test_delete_invalid_when_id_mismatches(capsys):
 def test_delete_invalid_keeps_record_when_id_matches_one_of_duplicate_names():
     # OpenAI has two assistants named "alice" with different ids; local record
     # holds one of those ids → must be kept.
-    external = _stub_external({"alice": {"asst_a1", "asst_a2"}})
-    agent_rec = _stub_agent_record({"alice": "asst_a2"})
+    external = _stub_external({"alice": {"asst_111111111111111111111111", "asst_222222222222222222222222"}})
+    agent_rec = _stub_agent_record({"alice": "asst_222222222222222222222222"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()
@@ -184,8 +184,8 @@ def test_delete_invalid_keeps_record_when_id_matches_one_of_duplicate_names():
 
 
 def test_delete_invalid_deletes_when_id_matches_none_of_duplicate_names():
-    external = _stub_external({"alice": {"asst_a1", "asst_a2"}})
-    agent_rec = _stub_agent_record({"alice": "asst_a_none_of_those"})
+    external = _stub_external({"alice": {"asst_111111111111111111111111", "asst_222222222222222222222222"}})
+    agent_rec = _stub_agent_record({"alice": "asst_333333333333333333333333"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()
@@ -194,11 +194,11 @@ def test_delete_invalid_deletes_when_id_matches_none_of_duplicate_names():
 
 
 def test_delete_invalid_mixed_categories(capsys):
-    external = _stub_external({"alice": {"asst_a"}, "bob": {"asst_b"}})
+    external = _stub_external({"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}, "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"}})
     agent_rec = _stub_agent_record({
-        "alice": "asst_a",          # valid
-        "bob": "asst_wrong",        # id mismatch
-        "ghost": "asst_g",          # name missing
+        "alice": "asst_aaaaaaaaaaaaaaaaaaaaaaaa",          # valid
+        "bob": "asst_wwwwwwwwwwwwwwwwwwwwwwww",        # id mismatch
+        "ghost": "asst_gggggggggggggggggggggggg",          # name missing
     })
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
@@ -216,8 +216,8 @@ def test_delete_invalid_mixed_categories(capsys):
 
 def test_delete_invalid_never_calls_external_delete():
     """delete-invalid is local-only: OpenAI-side assistants must not be touched."""
-    external = _stub_external({"alice": {"asst_a"}})
-    agent_rec = _stub_agent_record({"alice": "asst_wrong", "ghost": "asst_g"})
+    external = _stub_external({"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}})
+    agent_rec = _stub_agent_record({"alice": "asst_wwwwwwwwwwwwwwwwwwwwwwww", "ghost": "asst_gggggggggggggggggggggggg"})
     mgr = AgentManager("any", external, agent_rec, MagicMock())
 
     mgr.delete_invalid_agent_records()

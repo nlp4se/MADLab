@@ -60,6 +60,20 @@ def test_update_missing_file_raises_file_not_found(prompt_record):
         prompt_record.update("nope.txt", "anything")
 
 
+def test_update_rejects_empty_content(prompt_record, tmp_path):
+    (tmp_path / "p.txt").write_text("original")
+    with pytest.raises(ValueError, match="Cannot update prompt with empty content"):
+        prompt_record.update("p.txt", "")
+    assert (tmp_path / "p.txt").read_text() == "original"
+
+
+def test_update_rejects_whitespace_only_content(prompt_record, tmp_path):
+    (tmp_path / "p.txt").write_text("original")
+    with pytest.raises(ValueError, match="Cannot update prompt with empty content"):
+        prompt_record.update("p.txt", "   \n\t  ")
+    assert (tmp_path / "p.txt").read_text() == "original"
+
+
 def test_delete_existing_returns_true(prompt_record, tmp_path):
     path = tmp_path / "rm.txt"
     path.write_text("bye")

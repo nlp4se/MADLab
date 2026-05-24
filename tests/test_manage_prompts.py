@@ -78,6 +78,19 @@ def test_update_missing_prompt_raises(monkeypatch, tmp_path):
         _run_cli(monkeypatch, ["manage_prompts.py", "update", "--prompt-path", "missing.txt"])
 
 
+def test_update_with_empty_stdin_rejects(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "data" / "prompts" / "p.txt"
+    target.parent.mkdir(parents=True)
+    target.write_text("original")
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+
+    with pytest.raises(ValueError, match="Cannot update prompt with empty content"):
+        _run_cli(monkeypatch, ["manage_prompts.py", "update", "--prompt-path", "p.txt"])
+
+    assert target.read_text() == "original"
+
+
 # ---------- delete ----------
 
 def test_delete_removes_existing_file(monkeypatch, tmp_path):

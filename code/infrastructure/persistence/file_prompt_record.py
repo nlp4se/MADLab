@@ -38,6 +38,10 @@ class FilePromptRecord(PromptRecord):
             raise FileNotFoundError(
                 f"Prompt file not found: '{full_path}'"
             )
+        if not content.strip():
+            raise ValueError(
+                f"Cannot update prompt with empty content: '{full_path}'"
+            )
         with open(full_path, 'w') as f:
             f.write(content)
         print(f"PromptRecord updated at '{full_path}'")

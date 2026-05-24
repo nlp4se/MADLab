@@ -38,7 +38,7 @@ def test_create_wires_setup_assistant(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "data" / "prompts").mkdir(parents=True)
     (tmp_path / "data" / "prompts" / "p.txt").write_text("system instructions")
-    fake_external.create_assistant.return_value = "asst_new"
+    fake_external.create_assistant.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
     _run_cli(
         monkeypatch,
@@ -61,7 +61,7 @@ def test_create_wires_setup_assistant(monkeypatch, tmp_path, fake_external):
 
     # Record file was written
     rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
-    assert rec_path.read_text() == "asst_new"
+    assert rec_path.read_text() == "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
 
 # ---------- delete ----------
@@ -70,7 +70,7 @@ def test_delete_wires_delete_assistant(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
     rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xyz")
+    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
     _run_cli(
         monkeypatch,
@@ -78,7 +78,7 @@ def test_delete_wires_delete_assistant(monkeypatch, tmp_path, fake_external):
         fake_external,
     )
 
-    fake_external.delete_assistant.assert_called_once_with("asst_xyz")
+    fake_external.delete_assistant.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     assert not rec_path.exists()
 
 
@@ -88,7 +88,7 @@ def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, c
     monkeypatch.chdir(tmp_path)
     rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xyz")
+    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
     _run_cli(
         monkeypatch,
@@ -100,7 +100,7 @@ def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, c
         fake_external,
     )
 
-    fake_external.change_model.assert_called_once_with("asst_xyz", "gpt-4o-mini")
+    fake_external.change_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx", "gpt-4o-mini")
     out = capsys.readouterr().out
     assert "Model updated to 'gpt-4o-mini'" in out
 
@@ -111,7 +111,7 @@ def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_extern
     monkeypatch.chdir(tmp_path)
     rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xyz")
+    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     fake_external.get_model.return_value = "gpt-4o"
 
     _run_cli(
@@ -120,7 +120,7 @@ def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_extern
         fake_external,
     )
 
-    fake_external.get_model.assert_called_once_with("asst_xyz")
+    fake_external.get_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     out = capsys.readouterr().out
     assert "is using model: 'gpt-4o'" in out
 
@@ -131,8 +131,8 @@ def test_get_all_prints_local_record_names(monkeypatch, tmp_path, fake_external,
     monkeypatch.chdir(tmp_path)
     recs = tmp_path / "data" / "assistant_records"
     recs.mkdir(parents=True)
-    (recs / "assistant_alice.txt").write_text("asst_a")
-    (recs / "assistant_bob.txt").write_text("asst_b")
+    (recs / "assistant_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")
+    (recs / "assistant_bob.txt").write_text("asst_bbbbbbbbbbbbbbbbbbbbbbbb")
 
     _run_cli(
         monkeypatch,
@@ -166,13 +166,13 @@ def test_delete_invalid_removes_local_records_and_skips_openai_deletion(
     monkeypatch.chdir(tmp_path)
     recs = tmp_path / "data" / "assistant_records"
     recs.mkdir(parents=True)
-    (recs / "assistant_alice.txt").write_text("asst_a")        # valid
-    (recs / "assistant_bob.txt").write_text("asst_wrong")      # id mismatch
-    (recs / "assistant_ghost.txt").write_text("asst_g")        # name missing
+    (recs / "assistant_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")        # valid
+    (recs / "assistant_bob.txt").write_text("asst_wwwwwwwwwwwwwwwwwwwwwwww")      # id mismatch
+    (recs / "assistant_ghost.txt").write_text("asst_gggggggggggggggggggggggg")        # name missing
 
     fake_external.list_assistants.return_value = {
-        "alice": {"asst_a"},
-        "bob": {"asst_b"},
+        "alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"},
+        "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"},
     }
 
     _run_cli(
