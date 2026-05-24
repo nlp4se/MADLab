@@ -4,29 +4,30 @@ from pathlib import Path
 import json
 from tqdm import tqdm
 import time
-from pubsub import pub
 
 from .agent_caller import AgentCaller
+from .ports.event_bus import EventBus
 
 
 class DebaterAgent:
-    def __init__(self, name: str, session_id: str, caller: AgentCaller, temperature: float, channels_to_listen: List[str]):
+    def __init__(self, name: str, session_id: str, caller: AgentCaller, temperature: float, channels_to_listen: List[str], event_bus: EventBus):
         self.name = name
         self.session_id = session_id
         self.caller = caller
         self.temperature = temperature
+        self.event_bus = event_bus
 
         self.inbox = []
         self.response_ready_to_send = None
 
         # --- SUBSCRIPTIONS TO DATA BUS ---
         for channel in channels_to_listen:
-            pub.subscribe(self.receive_data, channel)
-        pub.subscribe(self.receive_data, "requirement_channel")
+            self.event_bus.subscribe(channel, self.receive_data)
+        self.event_bus.subscribe("requirement_channel", self.receive_data)
 
         # --- SUBSCRIPTIONS TO CONTROL BUS ---
-        pub.subscribe(self.process_and_clear, f"process_{self.name}")
-        pub.subscribe(self.send_response, f"send_{self.name}")
+        self.event_bus.subscribe(f"process_{self.name}", self.process_and_clear)
+        self.event_bus.subscribe(f"send_{self.name}", self.send_response)
 
     def receive_data(self, sender: str, content: str, round_number: int = None):  # The round number is required to match send_response's signature. The DebaterAgent doesn't need it, but the JudgeAgent listening on this same channel does.
         self.inbox.append((sender, content))
@@ -49,7 +50,7 @@ class DebaterAgent:
 
         # Save the response and send metrics to monitor
         self.response_ready_to_send = response
-        pub.sendMessage("metrics_channel", metrics=metrics)
+        self.event_bus.send("metrics_channel", metrics=metrics)
 
     def build_debate_input(self, round_number, data_to_process):
         requirement_base = ""
@@ -83,12 +84,12 @@ class DebaterAgent:
 
     def send_response(self, round_number: int):
         if self.response_ready_to_send:
-            pub.sendMessage(self.name, sender=self.name, content=self.response_ready_to_send, round_number=round_number)   # We send round_number strictly so the listening JudgeAgent can track the debate turns.
+            self.event_bus.send(self.name, sender=self.name, content=self.response_ready_to_send, round_number=round_number)   # We send round_number strictly so the listening JudgeAgent can track the debate turns.
             self.response_ready_to_send = None
 
 
 class JudgeAgent:
-    def __init__(self, name: str, channels_to_listen: List[str], caller: AgentCaller, session_id: str, temperature: float = 0):
+    def __init__(self, name: str, channels_to_listen: List[str], caller: AgentCaller, session_id: str, event_bus: EventBus, temperature: float = 0):
         self.name = name
         self.responses = []
         self.total_metrics = {
@@ -100,11 +101,12 @@ class JudgeAgent:
         self.caller = caller
         self.temperature = temperature
         self.session_id = session_id
+        self.event_bus = event_bus
 
         for channel in channels_to_listen:
-            pub.subscribe(self.register_response, channel)
+            self.event_bus.subscribe(channel, self.register_response)
 
-        pub.subscribe(self.register_metrics, "metrics_channel")
+        self.event_bus.subscribe("metrics_channel", self.register_metrics)
 
     def _call_api(self, judge_input: str) -> tuple:
         while True:
@@ -128,9 +130,10 @@ class JudgeAgent:
 
 
 class MadDebate:
-    def __init__(self, caller: AgentCaller):
-        """Initialize the debate orchestrator with an AgentCaller instance."""
+    def __init__(self, caller: AgentCaller, event_bus: EventBus):
+        """Initialize the debate orchestrator with an AgentCaller and an EventBus instance."""
         self.caller = caller
+        self.event_bus = event_bus
 
     def run_debate(
         self,
@@ -144,13 +147,14 @@ class MadDebate:
     ) -> Tuple[List, Dict]:
         """Execute the debate between assistants and return responses and metrics."""
         # Clear previous subscriptions and instantiate Judge Node to collect all debate responses and metrics
-        pub.unsubAll()
+        self.event_bus.unsubscribe_all()
         self.judge = JudgeAgent(
             name=judge,
             channels_to_listen=assistants,
             caller=self.caller,
-            temperature=temperature,
-            session_id=self.caller.start_session()
+            session_id=self.caller.start_session(),
+            event_bus=self.event_bus,
+            temperature=temperature
         )
 
         # Create sessions (one persistent conversation per debater)
@@ -167,7 +171,8 @@ class MadDebate:
                 session_id=assistant_sessions[name],
                 caller=self.caller,
                 temperature=temperature,
-                channels_to_listen=edges
+                channels_to_listen=edges,
+                event_bus=self.event_bus
             )
 
         # ==========================================
@@ -175,7 +180,7 @@ class MadDebate:
         # ==========================================
 
         # The coordinator launches the requirement to classify
-        pub.sendMessage("requirement_channel", sender="Coordinator", content=requirement)
+        self.event_bus.send("requirement_channel", sender="Coordinator", content=requirement)
 
         for round_num in range(n_iterations + 1):
             print(f"\nRound {round_num}")
@@ -187,11 +192,11 @@ class MadDebate:
 
                 # Step 1: Tell agents in this turn to process their inbox
                 for node_name in node_group:
-                    pub.sendMessage(f"process_{node_name}", round_number=round_num)
+                    self.event_bus.send(f"process_{node_name}", round_number=round_num)
 
                 # Step 2: Once all agents have processed their inbox, tell them to emit their responses. It is necessary to have this as a separate step to ensure that all agents in the same turn are responding based on the current information (the state of the debate at the beginning of the turn), and not reacting to each other's responses within the same turn.
                 for node_name in node_group:
-                    pub.sendMessage(f"send_{node_name}", round_number=round_num)
+                    self.event_bus.send(f"send_{node_name}", round_number=round_num)
 
         # Debate finished, retrieve history
         responses = self.judge.responses

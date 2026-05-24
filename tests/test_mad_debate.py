@@ -7,6 +7,7 @@ and that the judge agent collects the full debate history.
 from unittest.mock import patch, MagicMock
 from hypothesis import given, note, strategies as st
 from code.core.mad_debate import MadDebate, DebaterAgent
+from code.infrastructure.pubsub.pubsub_event_bus import PubSubEventBus
 from pubsub import pub
 from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
 
@@ -57,7 +58,7 @@ def test_messages_respect_topology(config):
 
     with patch.object(DebaterAgent, "receive_data", spy_receive):
 
-        debate = MadDebate(caller=_make_mock_caller())
+        debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -108,7 +109,7 @@ def test_protocol_list_executed(config):
 
     with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        debate = MadDebate(caller=_make_mock_caller())
+        debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -169,7 +170,7 @@ def test_protocol_dict_executed(config):
 
     with patch("pubsub.pub.sendMessage", side_effect=spy_send):
 
-        debate = MadDebate(caller=_make_mock_caller())
+        debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
             assistants=assistants,
@@ -231,7 +232,7 @@ def test_judge_collects_entire_debate(config):
     assistants, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
-    debate = MadDebate(caller=_make_mock_caller())
+    debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
     responses, metrics = debate.run_debate(
         requirement="Test requirement",
         assistants=assistants,

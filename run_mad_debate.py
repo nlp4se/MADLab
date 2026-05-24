@@ -10,6 +10,7 @@ from code.core.agent_caller import AgentCaller
 from code.core.validators import validate_interaction_file
 from code.infrastructure.openai.openai_agent_caller import OpenAIAgentCaller
 from code.infrastructure.persistence.file_agent_record import FileAgentRecord
+from code.infrastructure.pubsub.pubsub_event_bus import PubSubEventBus
 
 
 def main():
@@ -25,7 +26,8 @@ def main():
     agent_record = FileAgentRecord()
     external_caller = OpenAIAgentCaller(api_key=os.getenv("OPENAI_API_KEY"))
     caller = AgentCaller(external_caller=external_caller, agent_record=agent_record)
-    debate = MadDebate(caller=caller)
+    event_bus = PubSubEventBus()
+    debate = MadDebate(caller=caller, event_bus=event_bus)
 
     with open(args.interaction_file) as f:
         interaction_config = json.load(f)
