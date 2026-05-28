@@ -6,7 +6,7 @@ and accepts valid ones, without duplicating validation logic.
 
 import pytest
 from hypothesis import given, strategies as st
-from ..validators import validate_interaction_file
+from code.domain.validators import validate_interaction_file
 from .strategies import (
     assistant_ids,
     valid_interaction_config_list,

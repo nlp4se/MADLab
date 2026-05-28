@@ -2,8 +2,12 @@ import pandas as pd
 import os
 from tqdm import tqdm
 import argparse
-from ..llm.openai.ask_assistant_openai import OpenAIAssistantCaller
 from dotenv import load_dotenv
+
+from ..domain.agent_caller import AgentCaller
+from ..infrastructure.openai.openai_agent_caller import OpenAIAgentCaller
+from ..infrastructure.persistence.file_agent_record import FileAgentRecord
+
 
 def process_dataset(
     input_path: str,
@@ -13,8 +17,8 @@ def process_dataset(
     model: str = "gpt-4o"
 ) -> None:
     """
-    Process a dataset in batches using OpenAI assistant.
-    
+    Process a dataset in batches using an OpenAI-backed assistant.
+
     Args:
         input_path: Path to input CSV file
         output_folder: Path to output folder
@@ -24,56 +28,48 @@ def process_dataset(
     """
     print(f"Loading dataset from {input_path}")
     df = pd.read_csv(input_path)
-    
-    # Initialize OpenAI assistant
+
     load_dotenv()
-    caller = OpenAIAssistantCaller(api_key=os.getenv("OPENAI_API_KEY"))
-    
-    # Create output folder if it doesn't exist
+    agent_record = FileAgentRecord()
+    external_caller = OpenAIAgentCaller(api_key=os.getenv("OPENAI_API_KEY"))
+    caller = AgentCaller(external_caller=external_caller, agent_record=agent_record)
+
     os.makedirs(output_folder, exist_ok=True)
-    
-    # Calculate number of batches
+
     n_batches = (len(df) + batch_size - 1) // batch_size
     print(f"Processing {len(df)} rows in {n_batches} batches")
-    
-    # Initialize results column
+
     df['assistant_label'] = None
-    
-    # Process in batches
+
     for i in tqdm(range(0, len(df), batch_size)):
         batch = df.iloc[i:i+batch_size]
-        
-        # Prepare requirements as an array
+
         requirements = batch['requirement'].tolist()
-        
-        # Send to assistant
-        response, _ = caller.send_message(
-            str(requirements),  # Convert array to string representation
+
+        response, _ = caller.submit_message(
+            str(requirements),
             assistant_name=assistant_name,
             model=model
         )
-        
+
         try:
-            # Parse response as JSON and get the classes array
             response_dict = eval(response)  # or you could use json.loads(response)
             labels = response_dict['classes']
-            
-            # Validate response length
+
             if len(labels) != len(batch):
                 print(f"Warning: Batch {i//batch_size + 1} - Response length mismatch")
                 continue
-                
-            # Update dataframe
+
             df.loc[i:i+batch_size-1, 'assistant_label'] = labels
-            
+
         except Exception as e:
             print(f"Error processing batch {i//batch_size + 1}: {e}")
             continue
-    
-    # Save results
+
     output_path = os.path.join(output_folder, os.path.basename(input_path))
     df.to_csv(output_path, index=False)
     print(f"Results saved to {output_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Process dataset using OpenAI assistant')
@@ -87,9 +83,9 @@ def main():
                        help='Name of the assistant to use')
     parser.add_argument('--model', default='gpt-4o',
                        help='Model to use (e.g., gpt-4o)')
-    
+
     args = parser.parse_args()
-    
+
     process_dataset(
         input_path=args.input_path,
         output_folder=args.output_folder,
@@ -97,6 +93,7 @@ def main():
         assistant_name=args.assistant_name,
         model=args.model
     )
+
 
 if __name__ == "__main__":
     main()
