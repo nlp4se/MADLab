@@ -6,7 +6,7 @@ and that the judge agent collects the full debate history.
 
 from unittest.mock import patch, MagicMock
 from hypothesis import given, note, strategies as st
-from code.core.mad_debate import MadDebate, DebaterAgent
+from code.domain.mad_debate import MadDebate, DebaterAgent
 from pubsub import pub
 from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
 

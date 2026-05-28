@@ -2,7 +2,7 @@ import os
 import argparse
 from dotenv import load_dotenv
 
-from code.core.agent_manager import AgentManager
+from code.domain.agent_manager import AgentManager
 from code.infrastructure.openai.openai_agent_manager import OpenAIAgentManager
 from code.infrastructure.persistence.file_agent_record import FileAgentRecord
 from code.infrastructure.persistence.file_prompt_record import FilePromptRecord

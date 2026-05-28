@@ -1,6 +1,6 @@
 import os
 
-from ...core.ports.prompt_record import PromptRecord
+from ...domain.contracts.prompt_record import PromptRecord
 
 
 class FilePromptRecord(PromptRecord):

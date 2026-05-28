@@ -1,6 +1,6 @@
-from .ports.external_agent_manager import ExternalAgentManager
-from .ports.agent_record import AgentRecord
-from .ports.prompt_record import PromptRecord
+from .contracts.external_agent_manager import ExternalAgentManager
+from .contracts.agent_record import AgentRecord
+from .contracts.prompt_record import PromptRecord
 
 
 class AgentManager:

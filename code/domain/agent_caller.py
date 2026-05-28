@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Dict, Tuple
 
-from .ports.external_agent_caller import ExternalAgentCaller
-from .ports.agent_record import AgentRecord
+from .contracts.external_agent_caller import ExternalAgentCaller
+from .contracts.agent_record import AgentRecord
 
 
 class AgentCaller:

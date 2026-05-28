@@ -2,7 +2,7 @@ import time
 from openai import OpenAI, NotFoundError
 from typing import Dict, Tuple
 
-from ...core.ports.external_agent_caller import ExternalAgentCaller
+from ...domain.contracts.external_agent_caller import ExternalAgentCaller
 
 
 class OpenAIAgentCaller(ExternalAgentCaller):

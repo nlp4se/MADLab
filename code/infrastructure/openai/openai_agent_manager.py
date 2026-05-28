@@ -3,7 +3,7 @@ import json
 from openai import OpenAI, NotFoundError, BadRequestError
 from typing import Dict
 
-from ...core.ports.external_agent_manager import ExternalAgentManager
+from ...domain.contracts.external_agent_manager import ExternalAgentManager
 
 
 class OpenAIAgentManager(ExternalAgentManager):

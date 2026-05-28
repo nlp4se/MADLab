@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
-from code.core.mad_debate import MadDebate
-from code.core.agent_caller import AgentCaller
-from code.core.validators import validate_interaction_file
+from code.domain.mad_debate import MadDebate
+from code.domain.agent_caller import AgentCaller
+from code.domain.validators import validate_interaction_file
 from code.infrastructure.openai.openai_agent_caller import OpenAIAgentCaller
 from code.infrastructure.persistence.file_agent_record import FileAgentRecord
 

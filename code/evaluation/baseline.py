@@ -4,7 +4,7 @@ from tqdm import tqdm
 import argparse
 from dotenv import load_dotenv
 
-from ..core.agent_caller import AgentCaller
+from ..domain.agent_caller import AgentCaller
 from ..infrastructure.openai.openai_agent_caller import OpenAIAgentCaller
 from ..infrastructure.persistence.file_agent_record import FileAgentRecord
 

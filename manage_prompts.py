@@ -1,6 +1,7 @@
 import sys
 import argparse
 
+from code.domain.contracts.prompt_record import PromptRecord
 from code.infrastructure.persistence.file_prompt_record import FilePromptRecord
 
 
@@ -31,7 +32,7 @@ def main():
 
     args = parser.parse_args()
 
-    prompt_record = FilePromptRecord()
+    prompt_record: PromptRecord  = FilePromptRecord()
 
     if args.action == 'create':
         content = _read_stdin(f"Enter prompt content for '{args.prompt_path}'")

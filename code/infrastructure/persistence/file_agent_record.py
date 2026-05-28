@@ -1,6 +1,6 @@
 import os
 
-from ...core.ports.agent_record import AgentRecord
+from ...domain.contracts.agent_record import AgentRecord
 
 
 class FileAgentRecord(AgentRecord):
