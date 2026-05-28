@@ -6,7 +6,7 @@ All three ports (ExternalAgentManager, AgentRecord, PromptRecord) are mocked.
 from unittest.mock import MagicMock, call
 import pytest
 
-from code.core.agent_manager import AgentManager
+from code.domain.agent_manager import AgentManager
 
 
 @pytest.fixture
