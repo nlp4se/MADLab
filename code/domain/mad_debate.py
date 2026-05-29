@@ -220,13 +220,16 @@ class MadDebate:
         print("\nJudge decisions:")
         print("-"*40)
         for n in range(n_iterations + 1):
-            filtered_responses = [r for r in responses if r[2] <= n]
+            filtered_responses = [r for r in responses if r[2] == n]
             discussion_history = "\n\n".join([
                 f"Round {round_num} - Agent '{name}' response:\n{response}"
                 for name, response, round_num in filtered_responses
             ])
 
-            judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
+            if n == 0:
+                judge_input = f"Requirement: {requirement}\n\n{discussion_history}"
+            else:
+                judge_input = discussion_history
 
             raw_decision, judge_metrics_iter = self.judge._call_api(judge_input)
 
