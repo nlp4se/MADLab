@@ -39,7 +39,7 @@ class DebaterAgent:
         # 1. Build the prompt based on received data
         debate_input = self.build_debate_input(round_number, data_to_process)
 
-        print(f"\n    Input to Assistant '{self.name}' [Session ID: {self.session_id}]:")
+        print(f"\n    Input to Agent '{self.name}' [Session ID: {self.session_id}]:")
         print(f"      {debate_input.replace(chr(10), chr(10) + '      ')}")
         print("\n    Response:")
 
@@ -60,7 +60,7 @@ class DebaterAgent:
             if sender == "Coordinator":
                 requirement_base = content
             else:
-                opposing_args.append(f"Assistant '{sender}' response:\n{content}")
+                opposing_args.append(f"Agent '{sender}' response:\n{content}")
 
         debate_input_parts = []
 
@@ -75,7 +75,7 @@ class DebaterAgent:
         while True:
             response, metrics = self.caller.submit_message(
                 debate_input,
-                assistant_name=self.name,
+                agent_name=self.name,
                 temperature=self.temperature,
                 session_id=self.session_id
             )
@@ -112,7 +112,7 @@ class JudgeAgent:
         while True:
             response, metrics = self.caller.submit_message(
                 judge_input,
-                assistant_name=self.name,
+                agent_name=self.name,
                 temperature=self.temperature,
                 session_id=self.session_id
             )
@@ -138,19 +138,19 @@ class MadDebate:
     def run_debate(
         self,
         requirement: str,
-        assistants: List[str],
+        agents: List[str],
         topology: Dict[str, List[str]],
         turns: Any,
         judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> Tuple[List, Dict]:
-        """Execute the debate between assistants and return responses and metrics."""
+        """Execute the debate between agents and return responses and metrics."""
         # Clear previous subscriptions and instantiate Judge Node to collect all debate responses and metrics
         self.event_bus.unsubscribe_all()
         self.judge = JudgeAgent(
             name=judge,
-            channels_to_listen=assistants,
+            channels_to_listen=agents,
             caller=self.caller,
             session_id=self.caller.start_session(),
             event_bus=self.event_bus,
@@ -158,17 +158,17 @@ class MadDebate:
         )
 
         # Create sessions (one persistent conversation per debater)
-        assistant_sessions = {
-            name: self.caller.start_session() for name in assistants
+        agent_sessions = {
+            name: self.caller.start_session() for name in agents
         }
 
         # Instantiate agents iterating over the graph configuration provided in interaction_file JSON
         instantiated_nodes = {}
-        for name in assistants:
+        for name in agents:
             edges = topology.get(name, [])
             instantiated_nodes[name] = DebaterAgent(
                 name=name,
-                session_id=assistant_sessions[name],
+                session_id=agent_sessions[name],
                 caller=self.caller,
                 temperature=temperature,
                 channels_to_listen=edges,
@@ -222,7 +222,7 @@ class MadDebate:
         for n in range(n_iterations + 1):
             filtered_responses = [r for r in responses if r[2] <= n]
             discussion_history = "\n\n".join([
-                f"Round {round_num} - Assistant '{name}' response:\n{response}"
+                f"Round {round_num} - Agent '{name}' response:\n{response}"
                 for name, response, round_num in filtered_responses
             ])
 
@@ -250,14 +250,14 @@ class MadDebate:
         self,
         input_file: Path,
         output_file: Path,
-        assistants: List[str],
+        agents: List[str],
         topology: Dict[str, List[str]],
         turns: Any,
         judge: str,
         temperature: float = 0,
         n_iterations: int = 0
     ) -> None:
-        """Process entire dataset through assistants and judge."""
+        """Process entire dataset through agents and judge."""
         df = pd.read_csv(input_file)
 
         # Create output files for each iteration
@@ -269,11 +269,11 @@ class MadDebate:
             output_path = output_file.parent / f"{base_name}_n{n}{output_file.suffix}"
             metrics_path = output_file.parent / f"{base_name}_metrics_n{n}.json"
 
-            # Create columns for each assistant's response at each iteration
+            # Create columns for each agent's response at each iteration
             df_with_responses = df.copy()
             for iteration in range(n + 1):  # Only include columns up to current iteration
-                for assistant_name in assistants:
-                    col_name = f"response_{assistant_name}_iter{iteration}"
+                for agent_name in agents:
+                    col_name = f"response_{agent_name}_iter{iteration}"
                     df_with_responses[col_name] = ''
             df_with_responses['judge'] = ''
 
@@ -305,7 +305,7 @@ class MadDebate:
                 # Run the debate
                 responses, metrics = self.run_debate(
                     requirement,
-                    assistants,
+                    agents,
                     topology,
                     turns,
                     judge,
@@ -331,12 +331,12 @@ class MadDebate:
 
                     # Add responses up to current iteration
                     for iteration in range(n + 1):
-                        for assistant_name in assistants:
-                            col_name = f"response_{assistant_name}_iter{iteration}"
-                            # Find the response for this assistant at this iteration
+                        for agent_name in agents:
+                            col_name = f"response_{agent_name}_iter{iteration}"
+                            # Find the response for this agent at this iteration
                             response = next(
                                 (response for name, response, round_num in responses
-                                 if name == assistant_name and round_num == iteration),
+                                 if name == agent_name and round_num == iteration),
                                 ''  # Default value if not found
                             )
                             row_copy[col_name] = response

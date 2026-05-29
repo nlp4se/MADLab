@@ -9,7 +9,7 @@ from hypothesis import given, note, strategies as st
 from code.domain.mad_debate import MadDebate, DebaterAgent
 from code.infrastructure.pubsub.pubsub_event_bus import PubSubEventBus
 from pubsub import pub
-from .strategies import assistant_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
+from .strategies import agent_ids, valid_topology, valid_turns_list_strategy, MIN_ROUNDS, MAX_ROUNDS
 
 
 def _make_mock_caller():
@@ -30,14 +30,14 @@ def _make_mock_caller():
 
 @st.composite
 def _topology_test_config(draw):
-    """Random assistants, random topology shape, random turns format (50/50 list/dict)."""
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
-    turns = draw(valid_turns_list_strategy(assistants))
+    """Random agents, random topology shape, random turns format (50/50 list/dict)."""
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
+    turns = draw(valid_turns_list_strategy(agents))
     use_dict = draw(st.booleans())
     if use_dict:
         turns = {"0": turns}
-    return assistants, topology, turns
+    return agents, topology, turns
 
 
 @given(config=_topology_test_config())
@@ -45,9 +45,9 @@ def test_messages_respect_topology(config):
     """[FR-EXEC-AC2] Validates that messages are only delivered to agents in the receiver's topology.
     Topology shape varies each run (ring, mesh, partial...).
     Alternates ~50/50 between list-style and dict-style turns.
-    At least 1 assistant per turn guaranteed by valid_turns_list_strategy.
+    At least 1 agent per turn guaranteed by valid_turns_list_strategy.
     """
-    assistants, topology, turns = config
+    agents, topology, turns = config
 
     original_receive = DebaterAgent.receive_data
     received_messages = []
@@ -61,7 +61,7 @@ def test_messages_respect_topology(config):
         debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
-            assistants=assistants,
+            agents=agents,
             topology=topology,
             turns=turns,
             judge="Judge",
@@ -86,17 +86,17 @@ def test_messages_respect_topology(config):
 
 @st.composite
 def _config_with_protocol_list(draw):
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
-    turns = draw(valid_turns_list_strategy(assistants))
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
+    turns = draw(valid_turns_list_strategy(agents))
     n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
-    return assistants, topology, turns, n_rounds
+    return agents, topology, turns, n_rounds
 
 
 @given(config=_config_with_protocol_list())
 def test_protocol_list_executed(config):
     """[FR-EXEC-AC1] Validates that the turn protocol is executed correctly when turns are a list."""
-    assistants, topology, turns, n_rounds = config
+    agents, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
     sent_messages = []
@@ -112,7 +112,7 @@ def test_protocol_list_executed(config):
         debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
-            assistants=assistants,
+            agents=agents,
             topology=topology,
             turns=turns,
             judge="Judge",
@@ -127,7 +127,7 @@ def test_protocol_list_executed(config):
             for node in group:
                 expected.append((f"send_{node}", round_num))
 
-    note(f"assistants: {assistants}")
+    note(f"agents: {agents}")
     note(f"turns: {turns}")
     note(f"n_rounds: {n_rounds}")
     note(f"expected: {expected}")
@@ -144,20 +144,20 @@ def test_protocol_list_executed(config):
 
 @st.composite
 def _config_with_protocol_dict(draw):
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
     n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
     turns_dict = {
-        str(i): draw(valid_turns_list_strategy(assistants))
+        str(i): draw(valid_turns_list_strategy(agents))
         for i in range(n_rounds)
     }
-    return assistants, topology, turns_dict, n_rounds
+    return agents, topology, turns_dict, n_rounds
 
 
 @given(config=_config_with_protocol_dict())
 def test_protocol_dict_executed(config):
     """[FR-EXEC-AC1] Validates that the turn protocol is executed correctly when turns are a dict."""
-    assistants, topology, turns_dict, n_rounds = config
+    agents, topology, turns_dict, n_rounds = config
     n_iterations = n_rounds - 1
 
     sent_messages = []
@@ -173,7 +173,7 @@ def test_protocol_dict_executed(config):
         debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
         debate.run_debate(
             requirement="Test requirement",
-            assistants=assistants,
+            agents=agents,
             topology=topology,
             turns=turns_dict,
             judge="Judge",
@@ -189,7 +189,7 @@ def test_protocol_dict_executed(config):
             for node in group:
                 expected.append((f"send_{node}", round_num))
 
-    note(f"assistants: {assistants}")
+    note(f"agents: {agents}")
     note(f"turns_dict: {turns_dict}")
     note(f"n_rounds: {n_rounds}")
     note(f"expected: {expected}")
@@ -206,43 +206,43 @@ def test_protocol_dict_executed(config):
 
 @st.composite
 def _full_debate_config(draw):
-    """Random assistants, topology, n_rounds, and 50/50 list/dict turns."""
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
+    """Random agents, topology, n_rounds, and 50/50 list/dict turns."""
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
     n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
     use_dict = draw(st.booleans())
 
     if use_dict:
         turns = {
-            str(i): draw(valid_turns_list_strategy(assistants))
+            str(i): draw(valid_turns_list_strategy(agents))
             for i in range(n_rounds)
         }
     else:
-        turns = draw(valid_turns_list_strategy(assistants))
+        turns = draw(valid_turns_list_strategy(agents))
 
-    return assistants, topology, turns, n_rounds
+    return agents, topology, turns, n_rounds
 
 
 @given(config=_full_debate_config())
 def test_judge_collects_entire_debate(config):
     """
-    [FR-EXEC-AC3] Validates that the judge receives exactly one response per (assistant, round)
-    pair for every assistant that actually spoke in that round.
+    [FR-EXEC-AC3] Validates that the judge receives exactly one response per (agent, round)
+    pair for every agent that actually spoke in that round.
     """
-    assistants, topology, turns, n_rounds = config
+    agents, topology, turns, n_rounds = config
     n_iterations = n_rounds - 1
 
     debate = MadDebate(caller=_make_mock_caller(), event_bus=PubSubEventBus())
     responses, metrics = debate.run_debate(
         requirement="Test requirement",
-        assistants=assistants,
+        agents=agents,
         topology=topology,
         turns=turns,
         judge="Judge",
         n_iterations=n_iterations,
     )
 
-    note(f"assistants: {assistants}")
+    note(f"agents: {agents}")
     note(f"n_rounds:   {n_rounds}")
     note(f"turns:      {turns}")
     note(f"responses:  {responses}")

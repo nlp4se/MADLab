@@ -4,28 +4,28 @@ from ...domain.contracts.agent_record import AgentRecord
 
 
 class FileAgentRecord(AgentRecord):
-    def __init__(self, base_dir: str = "data/assistant_records"):
+    def __init__(self, base_dir: str = "data/agent_records"):
         self.base_dir = base_dir
 
     def _path(self, name: str) -> str:
-        return os.path.join(self.base_dir, f"assistant_{name}.txt")
+        return os.path.join(self.base_dir, f"agent_{name}.txt")
 
     def get_id(self, name: str) -> str:
         path = self._path(name)
         try:
             with open(path, 'r') as f:
-                assistant_id = f.read().strip()
+                agent_id = f.read().strip()
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"No AgentRecord found for '{name}'. "
                 f"Make sure the OpenAI Assistant has been created and registered first."
             )
-        if not assistant_id:
+        if not agent_id:
             raise ValueError(
                 f"AgentRecord for '{name}' is empty. "
                 f"The file may be corrupted: '{path}'"
             )
-        return assistant_id
+        return agent_id
 
     def create(self, name: str, id: str) -> None:
         os.makedirs(self.base_dir, exist_ok=True)
@@ -38,8 +38,8 @@ class FileAgentRecord(AgentRecord):
             return []
         names = []
         for filename in os.listdir(self.base_dir):
-            if filename.startswith("assistant_") and filename.endswith(".txt"):
-                names.append(filename[len("assistant_"):-len(".txt")])
+            if filename.startswith("agent_") and filename.endswith(".txt"):
+                names.append(filename[len("agent_"):-len(".txt")])
         return names
 
     def delete(self, name: str) -> bool:

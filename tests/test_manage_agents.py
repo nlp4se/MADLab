@@ -1,9 +1,9 @@
-"""Tests for the manage_assistants CLI entry point.
+"""Tests for the manage_agents CLI entry point.
 
 Pattern:
 - patch sys.argv
 - monkeypatch.chdir(tmp_path) so FileAgentRecord/FilePromptRecord land in tmp
-- monkeypatch manage_assistants.OpenAIAgentManager to a factory returning a MagicMock
+- monkeypatch manage_agents.OpenAIAgentManager to a factory returning a MagicMock
 - call main() in-process
 """
 
@@ -11,7 +11,7 @@ import sys
 from unittest.mock import MagicMock
 import pytest
 
-import manage_assistants
+import manage_agents
 
 
 @pytest.fixture
@@ -24,27 +24,27 @@ def fake_external():
 def _run_cli(monkeypatch, argv, fake_external):
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.setattr(
-        manage_assistants,
+        manage_agents,
         "OpenAIAgentManager",
         lambda api_key: fake_external,
     )
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    manage_assistants.main()
+    manage_agents.main()
 
 
 # ---------- create ----------
 
-def test_create_wires_setup_assistant(monkeypatch, tmp_path, fake_external):
+def test_create_wires_setup_agent(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "data" / "prompts").mkdir(parents=True)
     (tmp_path / "data" / "prompts" / "p.txt").write_text("system instructions")
-    fake_external.create_assistant.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
+    fake_external.create_agent.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
     _run_cli(
         monkeypatch,
         [
-            "manage_assistants.py", "create",
-            "--assistant-name", "myAgent",
+            "manage_agents.py", "create",
+            "--agent-name", "myAgent",
             "--prompt-path", "p.txt",
             "--model", "gpt-4o",
             "--temperature", "0.3",
@@ -52,33 +52,33 @@ def test_create_wires_setup_assistant(monkeypatch, tmp_path, fake_external):
         fake_external,
     )
 
-    fake_external.create_assistant.assert_called_once()
-    args, kwargs = fake_external.create_assistant.call_args
+    fake_external.create_agent.assert_called_once()
+    args, kwargs = fake_external.create_agent.call_args
     assert args[0] == "myAgent"
     assert args[1] == "system instructions"
     assert args[2] == "gpt-4o"
     assert kwargs["temperature"] == 0.3
 
     # Record file was written
-    rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
+    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
     assert rec_path.read_text() == "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
 
 # ---------- delete ----------
 
-def test_delete_wires_delete_assistant(monkeypatch, tmp_path, fake_external):
+def test_delete_wires_delete_agent(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
+    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
     rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
     _run_cli(
         monkeypatch,
-        ["manage_assistants.py", "delete", "--assistant-name", "myAgent"],
+        ["manage_agents.py", "delete", "--agent-name", "myAgent"],
         fake_external,
     )
 
-    fake_external.delete_assistant.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    fake_external.delete_agent.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     assert not rec_path.exists()
 
 
@@ -86,15 +86,15 @@ def test_delete_wires_delete_assistant(monkeypatch, tmp_path, fake_external):
 
 def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
+    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
     rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
     _run_cli(
         monkeypatch,
         [
-            "manage_assistants.py", "change-model",
-            "--assistant-name", "myAgent",
+            "manage_agents.py", "change-model",
+            "--agent-name", "myAgent",
             "--model", "gpt-4o-mini",
         ],
         fake_external,
@@ -109,14 +109,14 @@ def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, c
 
 def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "assistant_records" / "assistant_myAgent.txt"
+    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
     rec_path.parent.mkdir(parents=True)
     rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     fake_external.get_model.return_value = "gpt-4o"
 
     _run_cli(
         monkeypatch,
-        ["manage_assistants.py", "get-model", "--assistant-name", "myAgent"],
+        ["manage_agents.py", "get-model", "--agent-name", "myAgent"],
         fake_external,
     )
 
@@ -129,14 +129,14 @@ def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_extern
 
 def test_get_all_prints_local_record_names(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    recs = tmp_path / "data" / "assistant_records"
+    recs = tmp_path / "data" / "agent_records"
     recs.mkdir(parents=True)
-    (recs / "assistant_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")
-    (recs / "assistant_bob.txt").write_text("asst_bbbbbbbbbbbbbbbbbbbbbbbb")
+    (recs / "agent_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")
+    (recs / "agent_bob.txt").write_text("asst_bbbbbbbbbbbbbbbbbbbbbbbb")
 
     _run_cli(
         monkeypatch,
-        ["manage_assistants.py", "get-all"],
+        ["manage_agents.py", "get-all"],
         fake_external,
     )
 
@@ -144,14 +144,14 @@ def test_get_all_prints_local_record_names(monkeypatch, tmp_path, fake_external,
     assert "Name: alice" in out
     assert "Name: bob" in out
     # Should NOT touch OpenAI for a get-all
-    fake_external.list_assistants.assert_not_called()
+    fake_external.list_agents.assert_not_called()
 
 
 def test_get_all_empty_prints_empty_message(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
     _run_cli(
         monkeypatch,
-        ["manage_assistants.py", "get-all"],
+        ["manage_agents.py", "get-all"],
         fake_external,
     )
     out = capsys.readouterr().out
@@ -164,40 +164,40 @@ def test_delete_invalid_removes_local_records_and_skips_openai_deletion(
     monkeypatch, tmp_path, fake_external
 ):
     monkeypatch.chdir(tmp_path)
-    recs = tmp_path / "data" / "assistant_records"
+    recs = tmp_path / "data" / "agent_records"
     recs.mkdir(parents=True)
-    (recs / "assistant_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")        # valid
-    (recs / "assistant_bob.txt").write_text("asst_wwwwwwwwwwwwwwwwwwwwwwww")      # id mismatch
-    (recs / "assistant_ghost.txt").write_text("asst_gggggggggggggggggggggggg")        # name missing
+    (recs / "agent_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")        # valid
+    (recs / "agent_bob.txt").write_text("asst_wwwwwwwwwwwwwwwwwwwwwwww")      # id mismatch
+    (recs / "agent_ghost.txt").write_text("asst_gggggggggggggggggggggggg")        # name missing
 
-    fake_external.list_assistants.return_value = {
+    fake_external.list_agents.return_value = {
         "alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"},
         "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"},
     }
 
     _run_cli(
         monkeypatch,
-        ["manage_assistants.py", "delete-invalid"],
+        ["manage_agents.py", "delete-invalid"],
         fake_external,
     )
 
     # Valid record stays; the other two are removed locally
-    assert (recs / "assistant_alice.txt").exists()
-    assert not (recs / "assistant_bob.txt").exists()
-    assert not (recs / "assistant_ghost.txt").exists()
+    assert (recs / "agent_alice.txt").exists()
+    assert not (recs / "agent_bob.txt").exists()
+    assert not (recs / "agent_ghost.txt").exists()
 
     # OpenAI-side deletion must never happen here
-    fake_external.delete_assistant.assert_not_called()
+    fake_external.delete_agent.assert_not_called()
 
 
 # ---------- argparse errors ----------
 
-def test_missing_assistant_name_for_delete_exits(monkeypatch, tmp_path, fake_external):
+def test_missing_agent_name_for_delete_exits(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit):
         _run_cli(
             monkeypatch,
-            ["manage_assistants.py", "delete"],
+            ["manage_agents.py", "delete"],
             fake_external,
         )
 
@@ -207,6 +207,6 @@ def test_unknown_subcommand_exits(monkeypatch, tmp_path, fake_external):
     with pytest.raises(SystemExit):
         _run_cli(
             monkeypatch,
-            ["manage_assistants.py", "bogus"],
+            ["manage_agents.py", "bogus"],
             fake_external,
         )

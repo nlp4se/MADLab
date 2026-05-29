@@ -8,5 +8,5 @@ class ExternalAgentCaller(ABC):
         pass
 
     @abstractmethod
-    def send_message(self, message: str, assistant_id: str, session_id: str, **kwargs) -> Tuple[str, Dict]:
+    def send_message(self, message: str, agent_id: str, session_id: str, **kwargs) -> Tuple[str, Dict]:
         pass

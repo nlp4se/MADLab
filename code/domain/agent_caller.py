@@ -13,14 +13,14 @@ class AgentCaller:
     def start_session(self) -> str:
         return self.external_caller.start_session()
 
-    def submit_message(self, message: str, assistant_name: str, **kwargs) -> Tuple[str, Dict]:
-        assistant_id = self.agent_record.get_id(assistant_name)
+    def submit_message(self, message: str, agent_name: str, **kwargs) -> Tuple[str, Dict]:
+        agent_id = self.agent_record.get_id(agent_name)
         session_id = kwargs.pop('session_id', None) or kwargs.pop('thread_id', None)
         if session_id is None:
             session_id = self.start_session()
-        return self.external_caller.send_message(message, assistant_id, session_id, **kwargs)
+        return self.external_caller.send_message(message, agent_id, session_id, **kwargs)
 
-    def process_with_metrics(self, message: str, assistant_name: str, **kwargs) -> Dict:
+    def process_with_metrics(self, message: str, agent_name: str, **kwargs) -> Dict:
         start_time = datetime.now()
         print(f"Starting processing at {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -32,7 +32,7 @@ class AgentCaller:
         }
 
         try:
-            response, usage_metadata = self.submit_message(message, assistant_name, **kwargs)
+            response, usage_metadata = self.submit_message(message, agent_name, **kwargs)
             metrics.update({
                 'total_tokens': usage_metadata.get('total_tokens', 0),
                 'total_prompt_tokens': usage_metadata.get('prompt_tokens', 0),

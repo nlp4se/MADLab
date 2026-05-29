@@ -8,35 +8,35 @@ test data for topologies, turns, and interaction configurations.
 import string
 import hypothesis.strategies as st
 
-MIN_ASSISTANTS = 2
-MAX_ASSISTANTS = 3
+MIN_AGENTS = 2
+MAX_AGENTS = 3
 MAX_ROUNDS = 2
 MIN_ROUNDS = 1
 
 _FIRST = string.ascii_letters
 _REST = string.ascii_letters + string.digits
 
-_safe_assistant_name = st.builds(
+_safe_agent_name = st.builds(
     lambda first, rest: first + rest,
     st.sampled_from(_FIRST),
     st.text(alphabet=_REST, min_size=0, max_size=9),
 )
 
-assistant_ids = st.lists(
-    _safe_assistant_name,
-    min_size=MIN_ASSISTANTS,
-    max_size=MAX_ASSISTANTS,
+agent_ids = st.lists(
+    _safe_agent_name,
+    min_size=MIN_AGENTS,
+    max_size=MAX_AGENTS,
     unique=True,
 )
 
 
 @st.composite
-def valid_topology(draw, assistants):
-    """Builds a topology where each node points to a non-empty subset of the other assistants,
+def valid_topology(draw, agents):
+    """Builds a topology where each node points to a non-empty subset of the other agents,
     with no self-references and no duplicate edges."""
     topology = {}
-    for src in assistants:
-        possible_targets = [a for a in assistants if a != src]
+    for src in agents:
+        possible_targets = [a for a in agents if a != src]
         targets = draw(
             st.lists(
                 st.sampled_from(possible_targets),
@@ -50,16 +50,16 @@ def valid_topology(draw, assistants):
 
 
 @st.composite
-def valid_turns_list_strategy(draw, assistants):
+def valid_turns_list_strategy(draw, agents):
     """
     Returns a list of non-empty turn groups where each group contains at least
-    one assistant. Assistants can appear at most once across all groups in the
-    round (no duplicates), but not all assistants need to appear.
+    one agent. Agents can appear at most once across all groups in the
+    round (no duplicates), but not all agents need to appear.
     """
-    # Draw a non-empty subset of assistants (at least 1).
-    n = len(assistants)
+    # Draw a non-empty subset of agents (at least 1).
+    n = len(agents)
     subset_size = draw(st.integers(min_value=1, max_value=n))
-    perm = draw(st.permutations(assistants))
+    perm = draw(st.permutations(agents))
     selected = list(perm[:subset_size])
 
     if subset_size == 1 or draw(st.booleans()):
@@ -96,12 +96,12 @@ def valid_interaction_config_list(draw):
     """
     Returns a valid interaction configuration where turns is a list of groups.
     """
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
-    turns = draw(valid_turns_list_strategy(assistants))
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
+    turns = draw(valid_turns_list_strategy(agents))
     number_of_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
     return {
-        "assistants": assistants,
+        "agents": agents,
         "topology": topology,
         "turns": turns,
         "number_of_rounds": number_of_rounds,
@@ -116,15 +116,15 @@ def valid_interaction_config_dict(draw):
     number_of_rounds is intentionally omitted: the validator does not require it
     when turns is already a dict.
     """
-    assistants = draw(assistant_ids)
-    topology = draw(valid_topology(assistants))
+    agents = draw(agent_ids)
+    topology = draw(valid_topology(agents))
     n_rounds = draw(st.integers(min_value=MIN_ROUNDS, max_value=MAX_ROUNDS))
     turns_dict = {
-        str(i): draw(valid_turns_list_strategy(assistants))
+        str(i): draw(valid_turns_list_strategy(agents))
         for i in range(n_rounds)
     }
     return {
-        "assistants": assistants,
+        "agents": agents,
         "topology": topology,
         "turns": turns_dict,
     }

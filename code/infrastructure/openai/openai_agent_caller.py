@@ -13,7 +13,7 @@ class OpenAIAgentCaller(ExternalAgentCaller):
     def start_session(self) -> str:
         return self.client.beta.threads.create().id
 
-    def send_message(self, message: str, assistant_id: str, session_id: str, **kwargs) -> Tuple[str, Dict]:
+    def send_message(self, message: str, agent_id: str, session_id: str, **kwargs) -> Tuple[str, Dict]:
         temperature = kwargs.get('temperature', 0)
 
         try:
@@ -25,7 +25,7 @@ class OpenAIAgentCaller(ExternalAgentCaller):
 
             run = self.client.beta.threads.runs.create(
                 thread_id=session_id,
-                assistant_id=assistant_id,
+                assistant_id=agent_id,
                 temperature=temperature
             )
 
@@ -58,7 +58,7 @@ class OpenAIAgentCaller(ExternalAgentCaller):
 
         except NotFoundError:
             error_msg = (
-                f"Assistant with ID '{assistant_id}' not found in OpenAI. "
+                f"Assistant with ID '{agent_id}' not found in OpenAI. "
                 f"It may have been deleted externally. "
                 f"Remove the corresponding AgentRecord and recreate the assistant."
             )
