@@ -15,7 +15,7 @@ from code.infrastructure.pubsub.pubsub_event_bus import PubSubEventBus
 
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(description='Process requirements through assistants and judge')
+    parser = argparse.ArgumentParser(description='Process requirements through agents and judge')
     parser.add_argument('--input', type=Path, required=True, help='Input CSV file path')
     parser.add_argument('--output', type=Path, required=True, help='Output CSV file path')
     parser.add_argument('--judge-file', type=Path, required=True, help='JSON file with judge config')
@@ -48,7 +48,7 @@ def main():
     else:
         iterations = interaction_config.get("number_of_rounds", 0) - 1
 
-    assistants = interaction_config["assistants"]
+    agents = interaction_config["agents"]
     topology = interaction_config["topology"]
 
     with open(args.judge_file) as f:
@@ -59,7 +59,7 @@ def main():
     debate.process_dataset(
         args.input,
         args.output,
-        assistants,
+        agents,
         topology,
         turns,
         judge,

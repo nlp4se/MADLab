@@ -4,34 +4,34 @@ from .contracts.prompt_record import PromptRecord
 
 
 class AgentManager:
-    def __init__(self, assistant_name: str,
+    def __init__(self, agent_name: str,
                  external_manager: ExternalAgentManager,
                  agent_record: AgentRecord,
                  prompt_record: PromptRecord):
-        self.assistant_name = assistant_name
+        self.agent_name = agent_name
         self.external_manager = external_manager
         self.agent_record = agent_record
         self.prompt_record = prompt_record
 
-    def setup_assistant(self, prompt_path: str, model: str, **kwargs) -> None:
+    def setup_agent(self, prompt_path: str, model: str, **kwargs) -> None:
         instructions = self.prompt_record.get(prompt_path)
-        assistant_id = self.external_manager.create_assistant(
-            self.assistant_name, instructions, model, **kwargs
+        agent_id = self.external_manager.create_agent(
+            self.agent_name, instructions, model, **kwargs
         )
-        self.agent_record.create(self.assistant_name, assistant_id)
+        self.agent_record.create(self.agent_name, agent_id)
 
     def get_model(self) -> str:
-        assistant_id = self.agent_record.get_id(self.assistant_name)
-        return self.external_manager.get_model(assistant_id)
+        agent_id = self.agent_record.get_id(self.agent_name)
+        return self.external_manager.get_model(agent_id)
 
     def change_model(self, new_model: str) -> None:
-        assistant_id = self.agent_record.get_id(self.assistant_name)
-        self.external_manager.change_model(assistant_id, new_model)
+        agent_id = self.agent_record.get_id(self.agent_name)
+        self.external_manager.change_model(agent_id, new_model)
 
-    def delete_assistant(self) -> None:
-        assistant_id = self.agent_record.get_id(self.assistant_name)
-        self.external_manager.delete_assistant(assistant_id)
-        self.agent_record.delete(self.assistant_name)
+    def delete_agent(self) -> None:
+        agent_id = self.agent_record.get_id(self.agent_name)
+        self.external_manager.delete_agent(agent_id)
+        self.agent_record.delete(self.agent_name)
 
     def list_agent_records(self) -> None:
         agent_record_names = self.agent_record.list_names()
@@ -42,7 +42,7 @@ class AgentManager:
             print("No AgentRecords were found in local storage.")
 
     def delete_invalid_agent_records(self) -> None:
-        openai_assistants = self.external_manager.list_assistants()
+        openai_assistants = self.external_manager.list_agents()
 
         print("OpenAI Assistants found:")
         for name, ids in openai_assistants.items():

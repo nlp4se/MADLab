@@ -36,14 +36,14 @@ def manager():
     return m
 
 
-# ---------- create_assistant ----------
+# ---------- create_agent ----------
 
-def test_create_assistant_calls_openai_and_returns_id(manager):
+def test_create_agent_calls_openai_and_returns_id(manager):
     fake_assistant = MagicMock()
     fake_assistant.id = "asst_aaaaaaaaaaaaaaaaaaaaaaaa"
     manager.client.beta.assistants.create.return_value = fake_assistant
 
-    returned = manager.create_assistant(
+    returned = manager.create_agent(
         name="myAgent",
         instructions="be helpful",
         model="gpt-4o",
@@ -60,7 +60,7 @@ def test_create_assistant_calls_openai_and_returns_id(manager):
     )
 
 
-def test_create_assistant_loads_schema_when_provided(manager, tmp_path):
+def test_create_agent_loads_schema_when_provided(manager, tmp_path):
     schema = {"name": "x", "schema": {"type": "object"}}
     schema_path = tmp_path / "schema.json"
     schema_path.write_text(json.dumps(schema))
@@ -69,7 +69,7 @@ def test_create_assistant_loads_schema_when_provided(manager, tmp_path):
     fake_assistant.id = "asst_ssssssssssssssssssssssss"
     manager.client.beta.assistants.create.return_value = fake_assistant
 
-    manager.create_assistant(
+    manager.create_agent(
         name="schemaAgent",
         instructions="x",
         model="gpt-4o",
@@ -83,12 +83,12 @@ def test_create_assistant_loads_schema_when_provided(manager, tmp_path):
     }
 
 
-def test_create_assistant_defaults_temperature_to_zero(manager):
+def test_create_agent_defaults_temperature_to_zero(manager):
     fake_assistant = MagicMock()
     fake_assistant.id = "asst_dddddddddddddddddddddddd"
     manager.client.beta.assistants.create.return_value = fake_assistant
 
-    manager.create_assistant(name="x", instructions="x", model="gpt-4o")
+    manager.create_agent(name="x", instructions="x", model="gpt-4o")
 
     _, kwargs = manager.client.beta.assistants.create.call_args
     assert kwargs["temperature"] == 0.0
@@ -126,34 +126,34 @@ def test_change_model_translates_not_found_to_value_error(manager):
         manager.change_model("asst_mmmmmmmmmmmmmmmmmmmmmmmm", "gpt-4o")
 
 
-# ---------- delete_assistant ----------
+# ---------- delete_agent ----------
 
-def test_delete_assistant_calls_openai_delete(manager):
-    manager.delete_assistant("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+def test_delete_agent_calls_openai_delete(manager):
+    manager.delete_agent("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
     manager.client.beta.assistants.delete.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
 
-def test_delete_assistant_translates_not_found_to_value_error(manager):
+def test_delete_agent_translates_not_found_to_value_error(manager):
     manager.client.beta.assistants.delete.side_effect = _make_not_found()
     with pytest.raises(ValueError, match="AgentRecord may be stale"):
-        manager.delete_assistant("asst_mmmmmmmmmmmmmmmmmmmmmmmm")
+        manager.delete_agent("asst_mmmmmmmmmmmmmmmmmmmmmmmm")
 
 
-def test_delete_assistant_translates_invalid_value_bad_request_to_value_error(manager):
+def test_delete_agent_translates_invalid_value_bad_request_to_value_error(manager):
     manager.client.beta.assistants.delete.side_effect = _make_bad_request("invalid_value")
     with pytest.raises(ValueError, match="invalid OpenAI Assistant ID"):
         # Intentionally malformed: missing 'asst_' prefix and wrong length.
-        manager.delete_assistant("not_a_valid_openai_id")
+        manager.delete_agent("not_a_valid_openai_id")
 
 
-def test_delete_assistant_reraises_other_bad_requests(manager):
+def test_delete_agent_reraises_other_bad_requests(manager):
     other = _make_bad_request("some_other_code")
     manager.client.beta.assistants.delete.side_effect = other
     with pytest.raises(BadRequestError):
-        manager.delete_assistant("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+        manager.delete_agent("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
 
 
-# ---------- list_assistants ----------
+# ---------- list_agents ----------
 
 def _make_page(assistants, has_next=False, next_page=None):
     page = MagicMock()
@@ -171,18 +171,18 @@ def _fake_assistant(name, asst_id):
     return a
 
 
-def test_list_assistants_single_page(manager):
+def test_list_agents_single_page(manager):
     page = _make_page([
         _fake_assistant("alice", "asst_aaaaaaaaaaaaaaaaaaaaaaaa"),
         _fake_assistant("bob", "asst_bbbbbbbbbbbbbbbbbbbbbbbb"),
     ], has_next=False)
     manager.client.beta.assistants.list.return_value = page
 
-    result = manager.list_assistants()
+    result = manager.list_agents()
     assert result == {"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}, "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"}}
 
 
-def test_list_assistants_paginates(manager):
+def test_list_agents_paginates(manager):
     page2 = _make_page([_fake_assistant("carol", "asst_cccccccccccccccccccccccc")], has_next=False)
     page1 = _make_page(
         [_fake_assistant("alice", "asst_aaaaaaaaaaaaaaaaaaaaaaaa")],
@@ -191,11 +191,11 @@ def test_list_assistants_paginates(manager):
     )
     manager.client.beta.assistants.list.return_value = page1
 
-    result = manager.list_assistants()
+    result = manager.list_agents()
     assert result == {"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"}, "carol": {"asst_cccccccccccccccccccccccc"}}
 
 
-def test_list_assistants_groups_duplicate_names_into_set(manager):
+def test_list_agents_groups_duplicate_names_into_set(manager):
     page = _make_page([
         _fake_assistant("alice", "asst_aaaaaaaaaaaaaaaaaaaaaaaa"),
         _fake_assistant("alice", "asst_bbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -203,5 +203,5 @@ def test_list_assistants_groups_duplicate_names_into_set(manager):
     ], has_next=False)
     manager.client.beta.assistants.list.return_value = page
 
-    result = manager.list_assistants()
+    result = manager.list_agents()
     assert result == {"alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa", "asst_bbbbbbbbbbbbbbbbbbbbbbbb"}, "bob": {"asst_cccccccccccccccccccccccc"}}

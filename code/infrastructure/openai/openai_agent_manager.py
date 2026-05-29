@@ -17,7 +17,7 @@ class OpenAIAgentManager(ExternalAgentManager):
                 return {"type": "json_schema", "json_schema": json.loads(f.read())}
         return None
 
-    def create_assistant(self, name: str, instructions: str, model: str = "gpt-4o", **kwargs) -> str:
+    def create_agent(self, name: str, instructions: str, model: str = "gpt-4o", **kwargs) -> str:
         temperature = kwargs.get('temperature', 0.0)
         schema_file_path = kwargs.get('schema_file_path', None)
 
@@ -32,42 +32,42 @@ class OpenAIAgentManager(ExternalAgentManager):
         print(f"OpenAI Assistant created successfully. ID: {assistant.id} with Model: {model}")
         return assistant.id
 
-    def get_model(self, assistant_id: str) -> str:
+    def get_model(self, agent_id: str) -> str:
         try:
-            assistant = self.client.beta.assistants.retrieve(assistant_id)
+            assistant = self.client.beta.assistants.retrieve(agent_id)
             return assistant.model
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant with ID '{assistant_id}' not found in OpenAI. "
+                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
                 f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
             )
 
-    def change_model(self, assistant_id: str, new_model: str) -> None:
+    def change_model(self, agent_id: str, new_model: str) -> None:
         try:
-            self.client.beta.assistants.update(assistant_id, model=new_model)
+            self.client.beta.assistants.update(agent_id, model=new_model)
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant with ID '{assistant_id}' not found in OpenAI. "
+                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
                 f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
             )
 
-    def delete_assistant(self, assistant_id: str) -> None:
+    def delete_agent(self, agent_id: str) -> None:
         try:
-            self.client.beta.assistants.delete(assistant_id)
+            self.client.beta.assistants.delete(agent_id)
         except NotFoundError:
             raise ValueError(
-                f"OpenAI Assistant with ID '{assistant_id}' not found in OpenAI. "
+                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
                 f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
             )
         except BadRequestError as e:
             if e.code == 'invalid_value':
                 raise ValueError(
-                    f"The AgentRecord contains an invalid OpenAI Assistant ID: '{assistant_id}'. "
+                    f"The AgentRecord contains an invalid OpenAI Assistant ID: '{agent_id}'. "
                     f"The record is corrupted. Run 'delete-invalid' to clean up orphaned AgentRecords."
                 )
             raise
 
-    def list_assistants(self) -> dict[str, set[str]]:
+    def list_agents(self) -> dict[str, set[str]]:
         openai_assistants: dict[str, set[str]] = {}
         page = self.client.beta.assistants.list(limit=100)
         while True:

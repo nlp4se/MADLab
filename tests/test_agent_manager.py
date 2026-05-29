@@ -21,30 +21,30 @@ def ports():
 def manager(ports):
     external, agent_rec, prompt_rec = ports
     return AgentManager(
-        assistant_name="myAgent",
+        agent_name="myAgent",
         external_manager=external,
         agent_record=agent_rec,
         prompt_record=prompt_rec,
     )
 
 
-# ---------- setup_assistant ----------
+# ---------- setup_agent ----------
 
-def test_setup_assistant_orchestration_order(manager, ports):
+def test_setup_agent_orchestration_order(manager, ports):
     external, agent_rec, prompt_rec = ports
     prompt_rec.get.return_value = "system instructions"
-    external.create_assistant.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
+    external.create_agent.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
     parent = MagicMock()
     parent.attach_mock(prompt_rec, "prompt_rec")
     parent.attach_mock(external, "external")
     parent.attach_mock(agent_rec, "agent_rec")
 
-    manager.setup_assistant(prompt_path="p.txt", model="gpt-4o", temperature=0.5)
+    manager.setup_agent(prompt_path="p.txt", model="gpt-4o", temperature=0.5)
 
     expected = [
         call.prompt_rec.get("p.txt"),
-        call.external.create_assistant("myAgent", "system instructions", "gpt-4o", temperature=0.5),
+        call.external.create_agent("myAgent", "system instructions", "gpt-4o", temperature=0.5),
         call.agent_rec.create("myAgent", "asst_nnnnnnnnnnnnnnnnnnnnnnnn"),
     ]
     assert parent.mock_calls == expected
@@ -74,9 +74,9 @@ def test_change_model_looks_up_id_then_delegates(manager, ports):
     external.change_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx", "gpt-4o-mini")
 
 
-# ---------- delete_assistant ----------
+# ---------- delete_agent ----------
 
-def test_delete_assistant_orchestration_order(manager, ports):
+def test_delete_agent_orchestration_order(manager, ports):
     external, agent_rec, prompt_rec = ports
     agent_rec.get_id.return_value = "asst_xxxxxxxxxxxxxxxxxxxxxxxx"
 
@@ -84,11 +84,11 @@ def test_delete_assistant_orchestration_order(manager, ports):
     parent.attach_mock(agent_rec, "agent_rec")
     parent.attach_mock(external, "external")
 
-    manager.delete_assistant()
+    manager.delete_agent()
 
     expected = [
         call.agent_rec.get_id("myAgent"),
-        call.external.delete_assistant("asst_xxxxxxxxxxxxxxxxxxxxxxxx"),
+        call.external.delete_agent("asst_xxxxxxxxxxxxxxxxxxxxxxxx"),
         call.agent_rec.delete("myAgent"),
     ]
     assert parent.mock_calls == expected
@@ -131,7 +131,7 @@ def _stub_agent_record(local_records: dict):
 def _stub_external(openai_state: dict):
     """Build an ExternalAgentManager mock from a {name: set(ids)} dict."""
     ext = MagicMock()
-    ext.list_assistants.return_value = openai_state
+    ext.list_agents.return_value = openai_state
     return ext
 
 
@@ -222,4 +222,4 @@ def test_delete_invalid_never_calls_external_delete():
 
     mgr.delete_invalid_agent_records()
 
-    external.delete_assistant.assert_not_called()
+    external.delete_agent.assert_not_called()

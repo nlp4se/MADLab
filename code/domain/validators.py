@@ -2,27 +2,27 @@ from typing import List, Dict, Any
 
 def validate_required_keys(config):
     """Check that mandatory attributes exist and have the correct type."""
-    required_keys = ["assistants", "topology", "turns"]
+    required_keys = ["agents", "topology", "turns"]
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Configuration Error: Missing mandatory attribute '{key}' in interaction file.")
 
-    if not isinstance(config["assistants"], list):
-        raise ValueError("Configuration Error: 'assistants' must be a list.")
+    if not isinstance(config["agents"], list):
+        raise ValueError("Configuration Error: 'agents' must be a list.")
     if not isinstance(config["topology"], dict):
         raise ValueError("Configuration Error: 'topology' must be a dictionary.")
     if not isinstance(config["turns"], (list, dict)):
         raise ValueError("Configuration Error: 'turns' must be a list or a dictionary.")
 
-def validate_topology(assistants, topology):
+def validate_topology(agents, topology):
     """Check that the topology uses valid names and prevents duplicate edges or self-references."""
-    assistants_set = set(assistants)
+    agents_set = set(agents)
     topology_keys = set(topology.keys())
 
-    if topology_keys != assistants_set:
-        missing = assistants_set - topology_keys
-        extra = topology_keys - assistants_set
-        msg = "Configuration Error: 'topology' must contain exactly all assistants."
+    if topology_keys != agents_set:
+        missing = agents_set - topology_keys
+        extra = topology_keys - agents_set
+        msg = "Configuration Error: 'topology' must contain exactly all agents."
         if missing:
             msg += f" Missing: {missing}."
         if extra:
@@ -39,14 +39,14 @@ def validate_topology(assistants, topology):
             raise ValueError(f"Configuration Error: Node '{node}' in 'topology' must point to at least one node, but its edge list is empty.")
 
         for edge in edges:
-            if edge not in assistants_set:
-                raise ValueError(f"Configuration Error: Target node '{edge}' in 'topology' does not exist in 'assistants'.")
+            if edge not in agents_set:
+                raise ValueError(f"Configuration Error: Target node '{edge}' in 'topology' does not exist in 'agents'.")
             if edge == node:
                 raise ValueError(f"Configuration Error: Node '{node}' cannot point to itself in 'topology'.")
 
 def validate_turns(interaction_config):
     """Check the format of the turns, ensure rounds are correct, and no duplicates exist."""
-    assistants_set = set(interaction_config.get("assistants", []))
+    agents_set = set(interaction_config.get("agents", []))
     turns = interaction_config.get("turns", [])
     rounds_to_check = []
 
@@ -85,14 +85,14 @@ def validate_turns(interaction_config):
         seen_in_round = set()
         for group in current_round_turns:
             if not isinstance(group, list):
-                raise ValueError("Configuration Error: Each turn must be a list of assistants.")
+                raise ValueError("Configuration Error: Each turn must be a list of agents.")
 
             if not group:
-                raise ValueError("Configuration Error: A turn cannot be empty (must contain at least one assistant).")
+                raise ValueError("Configuration Error: A turn cannot be empty (must contain at least one agent).")
 
             for node in group:
-                if node not in assistants_set:
-                    raise ValueError(f"Configuration Error: Node '{node}' in 'turns' is not listed in 'assistants'.")
+                if node not in agents_set:
+                    raise ValueError(f"Configuration Error: Node '{node}' in 'turns' is not listed in 'agents'.")
                 if node in seen_in_round:
                     raise ValueError(f"Configuration Error: Node '{node}' speaks more than once in the same round.")
                 seen_in_round.add(node)
@@ -101,8 +101,8 @@ def validate_interaction_file(config):
     """Main entry point for file validation."""
     validate_required_keys(config)
 
-    assistants = config["assistants"]
+    agents = config["agents"]
     topology = config["topology"]
 
-    validate_topology(assistants, topology)
+    validate_topology(agents, topology)
     validate_turns(config)
