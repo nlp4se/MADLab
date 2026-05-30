@@ -11,5 +11,11 @@ class PubSubEventBus(EventBus):
     def send(self, channel: str, **kwargs) -> None:
         pub.sendMessage(channel, **kwargs)
 
+    def unsubscribe(self, channel: str, callback: Callable) -> None:
+        pub.unsubscribe(callback, channel)
+
+    def unsubscribe_agent(self, callback: Callable) -> None:
+        pub.unsubAll(listenerFilter=lambda listener: listener == callback)
+
     def unsubscribe_all(self) -> None:
         pub.unsubAll()
