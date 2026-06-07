@@ -13,8 +13,7 @@ def process_dataset(
     input_path: str,
     output_folder: str,
     batch_size: int,
-    agent_name: str,
-    model: str = "gpt-4o"
+    agent_name: str
 ) -> None:
     """
     Process a dataset in batches using an OpenAI-backed agent.
@@ -24,7 +23,6 @@ def process_dataset(
         output_folder: Path to output folder
         batch_size: Number of rows to process in each batch
         agent_name: Name of the agent to use
-        model: Model to use for the agent
     """
     print(f"Loading dataset from {input_path}")
     df = pd.read_csv(input_path)
@@ -39,7 +37,7 @@ def process_dataset(
     n_batches = (len(df) + batch_size - 1) // batch_size
     print(f"Processing {len(df)} rows in {n_batches} batches")
 
-    df['agent_label'] = None
+    df['judge'] = None
 
     for i in tqdm(range(0, len(df), batch_size)):
         batch = df.iloc[i:i+batch_size]
@@ -48,8 +46,7 @@ def process_dataset(
 
         response, _ = caller.submit_message(
             str(requirements),
-            agent_name=agent_name,
-            model=model
+            agent_name=agent_name
         )
 
         try:
@@ -60,7 +57,7 @@ def process_dataset(
                 print(f"Warning: Batch {i//batch_size + 1} - Response length mismatch")
                 continue
 
-            df.loc[i:i+batch_size-1, 'agent_label'] = labels
+            df.loc[i:i+batch_size-1, 'judge'] = labels
 
         except Exception as e:
             print(f"Error processing batch {i//batch_size + 1}: {e}")
@@ -81,8 +78,6 @@ def main():
                        help='Number of rows to process in each batch')
     parser.add_argument('--agent_name', required=True,
                        help='Name of the agent to use')
-    parser.add_argument('--model', default='gpt-4o',
-                       help='Model to use (e.g., gpt-4o)')
 
     args = parser.parse_args()
 
@@ -90,8 +85,7 @@ def main():
         input_path=args.input_path,
         output_folder=args.output_folder,
         batch_size=args.batch_size,
-        agent_name=args.agent_name,
-        model=args.model
+        agent_name=args.agent_name
     )
 
 
