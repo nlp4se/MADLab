@@ -102,6 +102,20 @@ def test_topology_keys_must_match_agents(agents):
 
 
 @given(agents=agent_ids)
+def test_topology_edges_not_list(agents):
+    """[FR-TOP-AC3] Validates that a non-list edge value in topology is rejected.
+
+    A string value such as "t1" is iterable, so without this guard it would be
+    silently treated as the character sequence ['t', '1'] instead of the node
+    "t1", producing a misleading error (or passing silently for single-char ids).
+    """
+    config = base_valid_config(agents)
+    config["topology"][agents[0]] = agents[1]  # string instead of [agents[1]]
+    with pytest.raises(ValueError, match="must be a list"):
+        validate_interaction_file(config)
+
+
+@given(agents=agent_ids)
 def test_node_empty_edges_rejected(agents):
     """[FR-TOP-AC3] Validates that a node with an empty edge list is rejected."""
     config = base_valid_config(agents)
