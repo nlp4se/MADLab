@@ -31,6 +31,9 @@ def validate_topology(agents, topology):
 
     for node, edges in topology.items():
 
+        if not isinstance(edges, list):
+            raise ValueError(f"Configuration Error: Edges for node '{node}' in 'topology' must be a list.")
+
         # len(set(edges)) removes duplicates. If length changes, there were duplicates.
         if len(edges) != len(set(edges)):
             raise ValueError(f"Configuration Error: Duplicate edges detected for node '{node}' in 'topology'.")
