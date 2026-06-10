@@ -49,6 +49,18 @@ def test_create_overwrites_existing_file(prompt_record, tmp_path):
     assert (tmp_path / "x.txt").read_text() == "new"
 
 
+def test_create_rejects_empty_content(prompt_record, tmp_path):
+    with pytest.raises(ValueError, match="Cannot create prompt with empty content"):
+        prompt_record.create("empty.txt", "")
+    assert not (tmp_path / "empty.txt").exists()
+
+
+def test_create_rejects_whitespace_only_content(prompt_record, tmp_path):
+    with pytest.raises(ValueError, match="Cannot create prompt with empty content"):
+        prompt_record.create("ws.txt", "   \n\t  ")
+    assert not (tmp_path / "ws.txt").exists()
+
+
 def test_update_replaces_content(prompt_record, tmp_path):
     (tmp_path / "f.txt").write_text("old content")
     prompt_record.update("f.txt", "fresh content")

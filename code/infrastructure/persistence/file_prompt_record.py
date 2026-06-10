@@ -27,6 +27,10 @@ class FilePromptRecord(PromptRecord):
 
     def create(self, prompt_path: str, content: str) -> None:
         full_path = self._path(prompt_path)
+        if not content.strip():
+            raise ValueError(
+                f"Cannot create prompt with empty content: '{full_path}'"
+            )
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, 'w') as f:
             f.write(content)
