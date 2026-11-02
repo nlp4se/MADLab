@@ -3,6 +3,7 @@
 The OpenAI client is fully mocked: no network calls are made.
 """
 
+import json
 from unittest.mock import MagicMock
 
 import httpx
@@ -39,14 +40,30 @@ def manager():
 
 # ---------- create_agent ----------
 
-def test_create_agent_validates_model_with_openai(manager):
-    manager.create_agent(_agent(model="gpt-4o"))
-    manager.client.models.retrieve.assert_called_once_with("gpt-4o")
+def test_create_agent_validates_full_agent_with_openai(manager):
+    manager.create_agent(_agent(model="gpt-4o", temperature=0.5))
+    _, kwargs = manager.client.responses.create.call_args
+    assert kwargs["model"] == "gpt-4o"
+    assert kwargs["instructions"] == "be helpful"
+    assert kwargs["temperature"] == 0.5
+    assert kwargs["store"] is False
 
 
-def test_create_agent_translates_not_found_model_to_value_error(manager):
-    manager.client.models.retrieve.side_effect = _make_not_found()
-    with pytest.raises(ValueError, match="OpenAI model 'gpt-4o-mni' does not exist"):
+def test_create_agent_sends_schema_when_provided(manager, tmp_path):
+    schema = {"name": "x", "schema": {"type": "object"}}
+    schema_path = tmp_path / "schema.json"
+    schema_path.write_text(json.dumps(schema))
+    agent = AgentDefinition(name="myAgent", model="gpt-4o", instructions="x", schema_file_path=str(schema_path))
+
+    manager.create_agent(agent)
+
+    _, kwargs = manager.client.responses.create.call_args
+    assert kwargs["text"] == {"format": {"type": "json_schema", "strict": False, **schema}}
+
+
+def test_create_agent_translates_openai_error_to_value_error(manager):
+    manager.client.responses.create.side_effect = _make_not_found()
+    with pytest.raises(ValueError, match="OpenAI rejected agent 'myAgent' \\(model 'gpt-4o-mni'\\)"):
         manager.create_agent(_agent(model="gpt-4o-mni"))
 
 
@@ -56,9 +73,10 @@ def test_create_agent_accepts_temperature_limits(manager, temperature):
 
 
 @pytest.mark.parametrize("temperature", [-0.1, 2.1])
-def test_create_agent_rejects_out_of_range_temperature(manager, temperature):
+def test_create_agent_rejects_out_of_range_temperature_without_calling_openai(manager, temperature):
     with pytest.raises(ValueError, match="out of range for OpenAI"):
         manager.create_agent(_agent(temperature=temperature))
+    assert manager.client.mock_calls == []
 
 
 # ---------- get_model ----------
@@ -70,14 +88,17 @@ def test_get_model_returns_local_model_without_calling_openai(manager):
 
 # ---------- change_model ----------
 
-def test_change_model_validates_new_model(manager):
-    manager.change_model(_agent(model="gpt-4o"), "gpt-4o-mini")
-    manager.client.models.retrieve.assert_called_once_with("gpt-4o-mini")
+def test_change_model_validates_agent_with_new_model(manager):
+    manager.change_model(_agent(model="gpt-4o", temperature=0.5), "gpt-4o-mini")
+    _, kwargs = manager.client.responses.create.call_args
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["instructions"] == "be helpful"
+    assert kwargs["temperature"] == 0.5
 
 
-def test_change_model_translates_not_found_to_value_error(manager):
-    manager.client.models.retrieve.side_effect = _make_not_found()
-    with pytest.raises(ValueError, match="does not exist or is not accessible"):
+def test_change_model_translates_openai_error_to_value_error(manager):
+    manager.client.responses.create.side_effect = _make_not_found()
+    with pytest.raises(ValueError, match="OpenAI rejected agent 'myAgent' \\(model 'not-a-model'\\)"):
         manager.change_model(_agent(), "not-a-model")
 
 
