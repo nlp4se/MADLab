@@ -1,0 +1,7 @@
+{
+  "name": "n2",
+  "model": "gpt-4o-mini",
+  "instructions": "You are a debater arguing that the received requirement is non-functional (NF).",
+  "temperature": 0.0,
+  "schema_file_path": null
+}
