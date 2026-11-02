@@ -5,7 +5,8 @@ from .agent_record import AgentDefinition
 
 class ExternalAgentManager(ABC):
     """Defaults correspond to a stateless provider, where the agent only exists as its
-    local AgentDefinition. Stateful providers override the methods they need."""
+    local AgentDefinition. Providers override these methods to validate the agent or,
+    if stateful, to create, update and delete it on their side."""
 
     def create_agent(self, agent: AgentDefinition) -> None:
         pass
