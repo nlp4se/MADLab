@@ -20,7 +20,6 @@ class OpenAIAgentCaller(ExternalAgentCaller):
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
-        # Full conversation history of each session, kept in memory. OpenAI stores nothing (store=False)
         self.sessions: Dict[str, List[Dict]] = {}
 
     def start_session(self) -> str:
@@ -43,7 +42,7 @@ class OpenAIAgentCaller(ExternalAgentCaller):
                 store=False,
             )
         except Exception as e:
-            history.pop()  # Drop the unanswered message so a retry does not duplicate it
+            history.pop()
             print(f"Error processing message: {e}")
             return f"Run status: failed - {str(e)}", {
                 'prompt_tokens': 0,

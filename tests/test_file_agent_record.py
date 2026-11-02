@@ -91,7 +91,7 @@ def test_list_names_nonexistent_dir_returns_empty_list(tmp_path):
 def test_list_names_returns_only_matching_files(agent_record, tmp_path):
     _write(tmp_path / "agent_alice.json", _agent("alice"))
     _write(tmp_path / "agent_bob.json", _agent("bob"))
-    (tmp_path / "agent_legacy.txt").write_text("asst_llllllllllllllllllllllll")  # old format is ignored
+    (tmp_path / "agent_legacy.txt").write_text("asst_llllllllllllllllllllllll")
     (tmp_path / "notes.json").write_text("{}")
     (tmp_path / "agent_carol.log").write_text("also ignore")
     (tmp_path / "random_file.txt").write_text("ignore too")

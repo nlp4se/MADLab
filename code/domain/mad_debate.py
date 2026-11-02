@@ -157,7 +157,7 @@ class MadDebate:
             temperature=temperature
         )
 
-        # Create sessions (one conversation per debater, kept for the whole debate)
+        # Create sessions (one persistent conversation per debater)
         agent_sessions = {
             name: self.caller.start_session() for name in agents
         }
