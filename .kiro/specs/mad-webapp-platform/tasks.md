@@ -28,7 +28,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 
 ## Phase 1 — Taxonomy catalog, artifact schema & templates (engine core)
 
-- [~] 1.1 Implement the taxonomy catalog as data
+- [x] 1.1 Implement the taxonomy catalog as data
   - `backend/mad/taxonomy/catalog.py`: define every dimension → sub-dimension → value with
     `key`, `label`, `description` (paper-aligned), `default`, `executable`, optional `icon`.
   - Cover Participants (persona attributes/heterogeneity/assignment, 6 roles, base-model family/
@@ -38,7 +38,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
     `dynamic` without policy) as `executable=False`.
   - _Requirements: 1.1-1.8, 2.1-2.9, 3.1-3.6, 7.4, 7.5, 12.3_
 
-- [~] 1.2 Implement the MAD Configuration Artifact schema (Pydantic)
+- [x] 1.2 Implement the MAD Configuration Artifact schema (Pydantic)
   - `backend/mad/taxonomy/schema.py`: `MADConfig` with `participants`, `interaction`, `agreement`,
     `input_spec`, `schema_version`, ids/metadata — matching the design's JSON shape.
   - Add semantic validators: edges reference existing nodes; judge_based authority requires a judge
@@ -46,13 +46,13 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Unit tests for valid/invalid artifacts and field-level error reporting.
   - _Requirements: 1.*, 2.*, 3.*, 4.1, 4.2, 7.3_
 
-- [~] 1.3 Implement artifact versioning and round-trip I/O
+- [x] 1.3 Implement artifact versioning and round-trip I/O
   - `backend/mad/taxonomy/version.py`: schema version constant + forward-migration hook.
   - Export to JSON / import from JSON with validation; reject invalid with actionable errors.
   - Tests: round-trip export→import equality; invalid rejection; version stamp present.
   - _Requirements: 4.1, 4.2, 4.3, 4.5_
 
-- [~] 1.4 Implement predefined templates (personas, roles, topologies) and gold cases
+- [x] 1.4 Implement predefined templates (personas, roles, topologies) and gold cases
   - `backend/mad/taxonomy/templates.py`: persona patterns (angel/devil, prosecution/defence,
     faithful/unfaithful, proponent/challenger, gold/distractor, Six Thinking Hats, expert panel);
     role definitions with icon refs; topology builders (chain/ring/star/tree/layered/sparse/
