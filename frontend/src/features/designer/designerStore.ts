@@ -1,0 +1,416 @@
+/**
+ * Designer state store (Zustand) — the two-way sync hub (Req 6.8).
+ *
+ * This store is the single source of truth while the designer is open. It holds
+ * the live `MADArtifact` (V = participants.nodes, E = interaction.topology.edges)
+ * plus a UI-only `LayoutMap` of node positions (not part of the artifact schema,
+ * see `layout.ts`).
+ *
+ * Both directions of the sync flow through here:
+ *   - artifact -> canvas: `selectFlowGraph` derives React Flow nodes/edges from
+ *     the artifact + layout, so the rendered graph is always a projection of the
+ *     artifact.
+ *   - canvas -> artifact: every canvas edit (addNode, moveNode, connectNodes,
+ *     removeNode, removeEdge, applyTopology) mutates the artifact (and layout)
+ *     in place, so what gets persisted via PUT /api/configs/{id} reflects the
+ *     canvas exactly.
+ *
+ * A `dirty` flag tracks unsaved edits so the toolbar can enable/disable Save and
+ * warn on navigation.
+ */
+import { create } from "zustand";
+
+import {
+  normalizeArtifact,
+  type AgreementArtifact,
+  type ApplicableTopology,
+  type EdgeArtifact,
+  type FormatArtifact,
+  type InteractionArtifact,
+  type MADArtifact,
+  type ParticipantNodeArtifact,
+  type ParticipantsArtifact,
+} from "./artifact";
+import type { FieldError } from "@/api";
+import { autoLayout, reconcileLayout, type LayoutMap, type XYPosition } from "./layout";
+import { buildTopologyEdges, topologyMeta } from "./topology";
+
+/** A selected canvas element (node or edge), or nothing. */
+export type Selection =
+  | { kind: "node"; id: string }
+  | { kind: "edge"; id: string }
+  | null;
+
+export interface DesignerState {
+  /** The config's DB id (route param); null before a config is loaded. */
+  configId: number | null;
+  /** The live artifact — the canvas is a projection of this (Req 6.8). */
+  artifact: MADArtifact | null;
+  /** UI-only node positions, keyed by node id (not persisted in the artifact). */
+  layout: LayoutMap;
+  /** Currently selected node/edge (for the inspector, task 8.4). */
+  selection: Selection;
+  /** Unsaved-edits flag; set by every mutation, cleared on load/save. */
+  dirty: boolean;
+  /** Field errors from the last server-side validation (Req 7.3), if any. */
+  validationErrors: FieldError[];
+
+  /** Replace the whole artifact (e.g. on load or after a save round-trip). */
+  loadArtifact: (configId: number, raw: Record<string, unknown>) => void;
+  /** Add a new participant node with sensible defaults; returns its id. */
+  addNode: (partial?: Partial<ParticipantNodeArtifact>) => string;
+  /** Patch a single participant node's fields (Req 1.*, inspector). */
+  updateNode: (id: string, patch: Partial<ParticipantNodeArtifact>) => void;
+  /** Patch participant-dimension-level fields (heterogeneity, assignment). */
+  updateParticipants: (
+    patch: Partial<Omit<ParticipantsArtifact, "nodes" | "groups">>,
+  ) => void;
+  /** Patch a single edge's properties (name/colour/direction, Req 6.4). */
+  updateEdge: (edgeId: string, patch: Partial<EdgeArtifact>) => void;
+  /** Patch the topology meta (adaptability/structure/pattern) without touching E. */
+  updateTopologyMeta: (
+    patch: Partial<
+      Pick<
+        InteractionArtifact["topology"],
+        "adaptability" | "structure" | "pattern" | "dynamic_policy"
+      >
+    >,
+  ) => void;
+  /** Patch the protocol (mechanism/max_rounds/ordering). */
+  updateProtocol: (
+    patch: Partial<NonNullable<InteractionArtifact["protocol"]>>,
+  ) => void;
+  /** Patch the format (syntax/content/memory + metadata signals). */
+  updateFormat: (patch: Partial<FormatArtifact>) => void;
+  /** Patch the agreement (authority/resolution/params/output_schema). */
+  updateAgreement: (patch: Partial<AgreementArtifact>) => void;
+  /** Record server-side validation field errors (Req 7.3). */
+  setValidationErrors: (errors: FieldError[]) => void;
+  /** Update a node's canvas position (UI-only layout). */
+  moveNode: (id: string, position: XYPosition) => void;
+  /** Create a directed edge between two existing nodes (no self/dup edges). */
+  connectNodes: (source: string, target: string) => void;
+  /** Remove a node and every edge incident to it. */
+  removeNode: (id: string) => void;
+  /** Remove a single edge by its synthetic id (`source->target`). */
+  removeEdge: (edgeId: string) => void;
+  /** Apply a topology template, regenerating E over the current nodes (Req 6.5). */
+  applyTopology: (topology: ApplicableTopology) => void;
+  /** Re-run auto-layout over all nodes. */
+  relayout: () => void;
+  /** Set the current selection. */
+  setSelection: (selection: Selection) => void;
+  /** Mark the artifact as saved (clears `dirty` and validation errors). */
+  markSaved: () => void;
+}
+
+/** Synthetic, stable id for an edge derived from its endpoints. */
+export function edgeId(edge: Pick<EdgeArtifact, "source" | "target">): string {
+  return `${edge.source}->${edge.target}`;
+}
+
+/** Generate a unique node id not already used in the artifact. */
+function nextNodeId(artifact: MADArtifact): string {
+  const used = new Set(artifact.participants.nodes.map((n) => n.id));
+  let i = artifact.participants.nodes.length + 1;
+  let candidate = `participant-${i}`;
+  while (used.has(candidate)) {
+    i += 1;
+    candidate = `participant-${i}`;
+  }
+  return candidate;
+}
+
+/** A fresh participant node with defaults (Req 7.1: immediately valid). */
+function defaultNode(
+  id: string,
+  index: number,
+  partial?: Partial<ParticipantNodeArtifact>,
+): ParticipantNodeArtifact {
+  const { id: _ignored, ...rest } = partial ?? {};
+  void _ignored;
+  return {
+    label: partial?.label ?? `Participant ${index}`,
+    roles: partial?.roles ?? ["debater"],
+    persona: partial?.persona ?? {},
+    base_model: partial?.base_model ?? { family: "closed_weight" },
+    system_prompt: partial?.system_prompt ?? null,
+    group: partial?.group ?? null,
+    ...rest,
+    id, // id always wins (supplied explicitly by the caller)
+  };
+}
+
+export const useDesignerStore = create<DesignerState>((set, get) => ({
+  configId: null,
+  artifact: null,
+  layout: {},
+  selection: null,
+  dirty: false,
+  validationErrors: [],
+
+  loadArtifact: (configId, raw) => {
+    const artifact = normalizeArtifact(raw);
+    const nodeIds = artifact.participants.nodes.map((n) => n.id);
+    set({
+      configId,
+      artifact,
+      layout: autoLayout(nodeIds),
+      selection: null,
+      dirty: false,
+      validationErrors: [],
+    });
+  },
+
+  addNode: (partial) => {
+    const state = get();
+    if (!state.artifact) return "";
+    const id = partial?.id ?? nextNodeId(state.artifact);
+    const index = state.artifact.participants.nodes.length + 1;
+    const node = defaultNode(id, index, partial);
+    const nodes = [...state.artifact.participants.nodes, node];
+    const artifact: MADArtifact = {
+      ...state.artifact,
+      participants: { ...state.artifact.participants, nodes },
+    };
+    const layout = reconcileLayout(
+      nodes.map((n) => n.id),
+      state.layout,
+    );
+    set({ artifact, layout, dirty: true });
+    return id;
+  },
+
+  updateNode: (id, patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    const nodes = state.artifact.participants.nodes.map((n) =>
+      n.id === id ? mergeNode(n, patch) : n,
+    );
+    set({
+      artifact: {
+        ...state.artifact,
+        participants: { ...state.artifact.participants, nodes },
+      },
+      dirty: true,
+    });
+  },
+
+  updateParticipants: (patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        participants: { ...state.artifact.participants, ...patch },
+      },
+      dirty: true,
+    });
+  },
+
+  updateEdge: (id, patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    const edges = state.artifact.interaction.topology.edges.map((e) =>
+      edgeId(e) === id ? { ...e, ...patch } : e,
+    );
+    set({ artifact: withEdges(state.artifact, edges), dirty: true });
+  },
+
+  updateTopologyMeta: (patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        interaction: {
+          ...state.artifact.interaction,
+          topology: { ...state.artifact.interaction.topology, ...patch },
+        },
+      },
+      dirty: true,
+    });
+  },
+
+  updateProtocol: (patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        interaction: {
+          ...state.artifact.interaction,
+          protocol: { ...state.artifact.interaction.protocol, ...patch },
+        },
+      },
+      dirty: true,
+    });
+  },
+
+  updateFormat: (patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    const current = state.artifact.interaction.format ?? {};
+    // `content` is a nested object; merge it rather than replace wholesale.
+    const content =
+      patch.content !== undefined
+        ? { ...current.content, ...patch.content }
+        : current.content;
+    set({
+      artifact: {
+        ...state.artifact,
+        interaction: {
+          ...state.artifact.interaction,
+          format: { ...current, ...patch, content },
+        },
+      },
+      dirty: true,
+    });
+  },
+
+  updateAgreement: (patch) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        agreement: { ...state.artifact.agreement, ...patch },
+      },
+      dirty: true,
+    });
+  },
+
+  setValidationErrors: (errors) => set({ validationErrors: errors }),
+
+  moveNode: (id, position) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({ layout: { ...state.layout, [id]: position }, dirty: true });
+  },
+
+  connectNodes: (source, target) => {
+    const state = get();
+    if (!state.artifact) return;
+    if (source === target) return; // no self-loops on the canvas
+    const edges = state.artifact.interaction.topology.edges;
+    const exists = edges.some(
+      (e) => e.source === source && e.target === target,
+    );
+    if (exists) return; // no duplicate directed edges
+    const nextEdges = [...edges, { source, target, directed: true }];
+    set({
+      artifact: withEdges(state.artifact, nextEdges),
+      dirty: true,
+    });
+  },
+
+  removeNode: (id) => {
+    const state = get();
+    if (!state.artifact) return;
+    const nodes = state.artifact.participants.nodes.filter((n) => n.id !== id);
+    const edges = state.artifact.interaction.topology.edges.filter(
+      (e) => e.source !== id && e.target !== id,
+    );
+    const order = (state.artifact.interaction.protocol?.order ?? []).filter(
+      (ref) => ref !== id,
+    );
+    const artifact: MADArtifact = {
+      ...state.artifact,
+      participants: { ...state.artifact.participants, nodes },
+      interaction: {
+        ...state.artifact.interaction,
+        topology: { ...state.artifact.interaction.topology, edges },
+        protocol: state.artifact.interaction.protocol
+          ? { ...state.artifact.interaction.protocol, order }
+          : undefined,
+      },
+    };
+    const { [id]: _removed, ...layout } = state.layout;
+    void _removed;
+    const selection =
+      state.selection?.kind === "node" && state.selection.id === id
+        ? null
+        : state.selection;
+    set({ artifact, layout, selection, dirty: true });
+  },
+
+  removeEdge: (id) => {
+    const state = get();
+    if (!state.artifact) return;
+    const edges = state.artifact.interaction.topology.edges.filter(
+      (e) => edgeId(e) !== id,
+    );
+    const selection =
+      state.selection?.kind === "edge" && state.selection.id === id
+        ? null
+        : state.selection;
+    set({ artifact: withEdges(state.artifact, edges), selection, dirty: true });
+  },
+
+  applyTopology: (topology) => {
+    const state = get();
+    if (!state.artifact) return;
+    const nodeIds = state.artifact.participants.nodes.map((n) => n.id);
+    const edges = buildTopologyEdges(topology, nodeIds);
+    const meta = topologyMeta(topology);
+    const artifact: MADArtifact = {
+      ...state.artifact,
+      interaction: {
+        ...state.artifact.interaction,
+        topology: {
+          ...state.artifact.interaction.topology,
+          edges,
+          structure: meta.structure,
+          pattern: meta.pattern,
+        },
+      },
+    };
+    set({ artifact, dirty: true });
+  },
+
+  relayout: () => {
+    const state = get();
+    if (!state.artifact) return;
+    const nodeIds = state.artifact.participants.nodes.map((n) => n.id);
+    set({ layout: autoLayout(nodeIds), dirty: true });
+  },
+
+  setSelection: (selection) => set({ selection }),
+
+  markSaved: () => set({ dirty: false, validationErrors: [] }),
+}));
+
+/**
+ * Merge a patch into a participant node, deep-merging the nested `persona` and
+ * `base_model` objects so a partial update (e.g. just `persona.stance`) does
+ * not wipe sibling fields.
+ */
+function mergeNode(
+  node: ParticipantNodeArtifact,
+  patch: Partial<ParticipantNodeArtifact>,
+): ParticipantNodeArtifact {
+  return {
+    ...node,
+    ...patch,
+    persona:
+      patch.persona !== undefined
+        ? { ...node.persona, ...patch.persona }
+        : node.persona,
+    base_model:
+      patch.base_model !== undefined
+        ? { ...node.base_model, ...patch.base_model }
+        : node.base_model,
+    id: node.id, // id is immutable through a patch
+  };
+}
+
+/** Immutably replace the artifact's topology edge list. */
+function withEdges(artifact: MADArtifact, edges: EdgeArtifact[]): MADArtifact {
+  return {
+    ...artifact,
+    interaction: {
+      ...artifact.interaction,
+      topology: { ...artifact.interaction.topology, edges },
+    },
+  };
+}
