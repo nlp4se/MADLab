@@ -172,3 +172,18 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+paper/
+# Local launch helpers + runtime state (this session)
+.launch_*.ps1
+*.run.out.log
+*.run.err.log
+.run.out.log
+.run.err.log
+
+# Local SQLite datastore created by the backend at runtime
+backend/mad.db
+*.db
+
+# Node.js dependencies (frontend/website)
+node_modules/
+.astro/

@@ -2,10 +2,12 @@
 
 This repository is a research-focused project for creating AI assistants based on Large Language Models (LLMs) that engage in structured discussions to improve the performance of requirements engineering tasks, such as requirements classification.
 
-It is evolving from an OpenAI-only, CLI-driven framework into a full-featured, taxonomy-complete web
-platform for **designing, configuring, saving, executing, and analysing Multi-Agent Debate (MAD)
-configurations**, grounded in the three-dimensional MAD taxonomy (Participants, Interaction,
-Agreement).
+It is a full-featured, taxonomy-complete web platform for **designing, configuring, saving,
+executing, and analysing Multi-Agent Debate (MAD) configurations**, grounded in the
+three-dimensional MAD taxonomy (Participants, Interaction, Agreement). The original OpenAI-only,
+CLI-driven research framework has been refactored into the `backend/` component; its headless
+research path is preserved through the `mad` CLI (see
+[Legacy research workflow](#-legacy-research-workflow-original-openai-assistants-path)).
 
 ---
 
@@ -15,7 +17,8 @@ The platform is delivered as three cleanly separated, independently deployable c
 
 - **`backend/`** — Python **FastAPI** REST API wrapping a refactored, headless **MAD engine**, with
   multi-provider model support (closed- and open-weight) via LiteLLM, SQLite persistence, and
-  encrypted credential storage. See [`backend/README.md`](backend/README.md).
+  encrypted credential storage. Also ships the `mad` headless CLI. See
+  [`backend/README.md`](backend/README.md).
 - **`frontend/`** — **React + TypeScript** management webapp with a visual node/edge debate designer,
   exhaustive taxonomy configuration, provider management, and execution history. See
   [`frontend/README.md`](frontend/README.md).
@@ -29,13 +32,13 @@ The platform is delivered as three cleanly separated, independently deployable c
 ```
 llm-discussion/
 │
-├── backend/            # FastAPI REST API + headless MAD engine (Python)
+├── backend/            # FastAPI REST API + headless MAD engine + `mad` CLI (Python)
 ├── frontend/           # React + TypeScript management webapp
 ├── website/            # Static documentation / landing site
 ├── shared/             # Assets shared across components
 │   └── icons/          # Single source of role/topology SVG icons
 │
-├── code/               # Existing research scripts (refactored into backend/ in later tasks)
+├── code/               # Original research scripts (kept for reference; see note below)
 │   ├── llm/            # Logic for interacting with OpenAI API
 │   ├── evaluation/     # Scripts for generating baselines and computing metrics
 │   └── ...
@@ -49,36 +52,165 @@ llm-discussion/
 │   └── evaluation/     # Evaluation metrics, confusion matrices, and summaries
 │
 ├── paper/              # Reference papers (preserved)
-└── requirements.txt    # Python dependencies (current research workflow)
+└── requirements.txt    # Python dependencies for the original research scripts in code/
 ```
 
-> The existing `code/` scripts and the research workflow below remain functional and are being
-> refactored into `backend/` incrementally. The CLI research path is preserved throughout.
+> The research scripts that used to live only under `code/` have been refactored into the
+> `backend/` component. The headless research path is preserved there via the `mad` CLI
+> (`backend/cli/`) — the `create-config`, `run`, `classify`, and `evaluate` commands run the exact
+> same engine the webapp uses. The original `code/` scripts remain in the repository for reference
+> (the legacy OpenAI-assistants workflow is documented at the end of this file).
 
 ---
 
-## ⚙️ Setup (current research workflow)
+## ⚡ Quick start
+
+Running the full platform means three processes: the **backend** API, the **frontend** webapp, and
+(optionally) the static **website**. Each is self-contained; see the per-component READMEs for
+details. The commands below assume you start from the repository root.
+
+### 1. Backend (API + engine)
+
+Requires **Python ≥ 3.10**. From `backend/`:
+
+```bash
+# create + activate a virtualenv
+python -m venv .venv
+# Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+# macOS / Linux:        source .venv/bin/activate
+
+# install the backend (engine + web layer + dev/evaluation extras)
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev,evaluation]"
+```
+
+Create a `.env` in `backend/` with a server secret (used to encrypt stored provider credentials)
+and any provider API keys you want to use:
+
+```dotenv
+# Server secret for Fernet credential encryption (required to store provider keys)
+MAD_SECRET_KEY=change-me-to-a-long-random-string
+
+# Provider keys (add only those you use)
+OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=...
+# GEMINI_API_KEY=...
+```
+
+Run the API (the app factory initializes the SQLite datastore and seeds the built-in gold/template
+configurations on startup):
+
+```bash
+uvicorn app.main:create_app --factory --reload
+```
+
+The API serves under `http://localhost:8000/api` (interactive docs at `http://localhost:8000/docs`).
+
+### 2. Frontend (management webapp)
+
+Requires **Node.js ≥ 20** and **npm ≥ 10**. From `frontend/`:
+
+```bash
+npm install
+cp .env.example .env    # optional; point VITE_API_BASE_URL at the backend
+npm run dev             # Vite dev server on http://localhost:5173
+```
+
+The API base URL is read from `VITE_API_BASE_URL` (default `http://localhost:8000/api`, which
+already matches the backend above).
+
+### 3. Website (static docs)
+
+Requires **Node.js ≥ 18**. From `website/`:
+
+```bash
+npm install
+npm run dev     # local dev server with hot reload
+npm run build   # produce the static site in website/dist/
+```
+
+The website is fully static and has **no runtime dependency** on the backend (its taxonomy content
+comes from a committed snapshot — see [`website/README.md`](website/README.md)).
+
+---
+
+## 🏆 Gold-case walkthrough
+
+The platform ships with two reference ("gold") MAD systems from the papers, seeded as **built-in
+configurations on the first backend startup**:
+
+- **RE binary debate** (`re_binary_debate`) — the requirements-classification debate: two opposing
+  debaters (functional vs. non-functional) plus a judge that decides F/NF.
+- **ChatEval S1 / S2 / S3** (`chateval_s1`, `chateval_s2`, `chateval_s3`) — ChatEval's three
+  communication strategies, which differ only in documented attributes (protocol mechanism and the
+  presence of a Summarizer node).
+
+### Via the webapp
+
+1. **Start the backend** (step 1 above). On first launch it creates the datastore and seeds the
+   built-in gold/template configurations.
+2. **Start the frontend** (step 2 above) and open `http://localhost:5173`.
+3. In **Providers**, add a provider (e.g. OpenAI) and its API key, then bind the gold configuration's
+   participants to one of its models in the designer. (A provider is required to actually execute a
+   debate.)
+4. Open **Configurations** — the built-in gold configs (RE binary debate, ChatEval S1/S2/S3) appear
+   in the list. Open one in the **visual designer** to inspect its nodes, edges, and taxonomy
+   settings across the Participants / Interaction / Agreement panels.
+5. Go to the **Run launcher**, pick the gold config, and choose an input mode:
+   - **Single** — type one ad-hoc input (e.g. a requirement sentence).
+   - **Batch** — select/upload a CSV such as `data/datasets/PROMISE/nfr-small.csv`, map its
+     `requirement` column to the config's placeholder, and (optionally) map the `type` column as the
+     ground-truth column to enable metrics.
+6. Launch the run, then open **Executions** to watch live progress and inspect the per-instance
+   **transcript** (rounds × agents), the final **decision**, and the aggregate **metrics** (accuracy
+   and friends when ground truth was provided).
+
+### Via the headless CLI (equivalent)
+
+The `mad` CLI runs the same engine with no web server. After installing the backend and configuring
+a provider, the RE binary classification over the sample dataset is:
+
+```bash
+# from the backend/ directory
+mad classify ../data/datasets/PROMISE/nfr-small.csv \
+    --requirement-column requirement \
+    --ground-truth type \
+    --provider-id 1 --model gpt-4o
+```
+
+This prints the per-instance F/NF predictions and the aggregate accuracy. See
+[`backend/README.md`](backend/README.md) for the full command set (`create-config`, `run`,
+`classify`, `evaluate`).
+
+---
+
+## 📚 Legacy research workflow (original OpenAI-assistants path)
+
+> The steps below are the **original, OpenAI-assistants-based** research workflow that predates the
+> platform refactor. They remain functional and are kept for reference and reproducibility. For new
+> work, prefer the `mad` CLI or the webapp described above — they run the same debate engine across
+> all supported providers.
+
+### Setup
 
 1. **Clone the repository**
-```bash
-git clone https://github.com/nlp4se/llm-discussion.git
-cd llm-discussion
-```
+   ```bash
+   git clone https://github.com/nlp4se/llm-discussion.git
+   cd llm-discussion
+   ```
 
 2. **Add your API keys in a `.env` file**
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-# Add other keys if needed
-```
+   ```env
+   OPENAI_API_KEY=your_openai_api_key_here
+   # Add other keys if needed
+   ```
 
 3. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
----
-
-## 🔍 Requirements Classification (Binary) - Functional and non-functional debaters
+### 🔍 Requirements Classification (Binary) — Functional and non-functional debaters
 
 This pattern defines three assistants:
 
@@ -86,7 +218,7 @@ This pattern defines three assistants:
 - **Non-Functional (NF)** debater: argues why the given requirement is non-functional.
 - **Judge**: analyses the response from the debaters and leads to a classification decision (F/NF).
 
-### 🪄 Step 1: Create the binary classification assistants
+#### 🪄 Step 1: Create the binary classification assistants
 
 ```bash
 python -m code.llm.openai.create_assistant_openai --assistant_name non-functional-debater --prompt_file_path ./data/prompts/discussant/non-functional-debater-prompt.txt
@@ -98,33 +230,25 @@ python -m code.llm.openai.create_assistant_openai --assistant_name functional-de
 python -m code.llm.openai.create_assistant_openai --assistant_name judge-debater --prompt_file_path ./data/prompts/coordinator/judge-prompt.txt --schema_file_path ./data/prompts/coordinator/requirements-schema-binary.json
 ```
 
----
-
-### ✏️ Step 2: Test the assistant on a sample prompt
+#### ✏️ Step 2: Test the assistant on a sample prompt
 
 ```bash
 python -m code.llm.openai.ask_assistant_openai --assistant_name functional-debater --prompt_file ./data/prompts/discussant/requirement-example-prompt.txt
 ```
 
----
-
-### 🧪 Step 3: Generate ground-truth baseline from dataset
+#### 🧪 Step 3: Generate ground-truth baseline from dataset
 
 ```bash
 python -m code.evaluation.baseline --input_path ./data/datasets/PROMISE/nfr.csv --output_folder ./data/output/baseline/binary/  --batch_size 10  --assistant_name persona_classifier_binary  --model gpt-4o
 ```
 
----
-
-### 📊 Step 4: Evaluate classification performance for baseline
+#### 📊 Step 4: Evaluate classification performance for baseline
 
 ```bash
 python -m code.evaluation.metrics --input ./data/output/baseline/binary/nfr.csv --output ./data/evaluation/binary
 ```
 
----
-
-### 🔢 Step 5: Classification with discussion
+#### 🔢 Step 5: Classification with discussion
 
 Run classification using multi-agent debate strategy:
 
@@ -142,9 +266,7 @@ Explanation of parameters:
 - --n: Number of requirements to sample per class (optional)
 - --iterations: Number of debate iterations between the debaters (default: 0)
 
----
-
-### 📊 Step 6: Evaluate classification performance for debate results
+#### 📊 Step 6: Evaluate classification performance for debate results
 
 ```bash
 python -m code.evaluation.metrics --input ./data/output/judge/binary/nfr.csv  --output ./data/evaluation/judge/binary
