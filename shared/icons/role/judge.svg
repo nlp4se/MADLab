@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Judge">
+  <title>Judge</title>
+  <!-- Balance scales: delivers the final decision -->
+  <path d="M12 3v16" />
+  <path d="M6 19h12" />
+  <path d="M5 6h14" />
+  <path d="M5 6 2.5 12h5L5 6Z" fill="currentColor" fill-opacity="0.12" />
+  <path d="M19 6 16.5 12h5L19 6Z" fill="currentColor" fill-opacity="0.12" />
+  <path d="M2.5 12a2.5 2.5 0 0 0 5 0" />
+  <path d="M16.5 12a2.5 2.5 0 0 0 5 0" />
+</svg>
