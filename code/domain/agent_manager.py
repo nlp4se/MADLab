@@ -1,5 +1,7 @@
+from dataclasses import replace
+
 from .contracts.external_agent_manager import ExternalAgentManager
-from .contracts.agent_record import AgentRecord
+from .contracts.agent_record import AgentRecord, AgentDefinition
 from .contracts.prompt_record import PromptRecord
 
 
@@ -13,24 +15,31 @@ class AgentManager:
         self.agent_record = agent_record
         self.prompt_record = prompt_record
 
-    def setup_agent(self, prompt_path: str, model: str, **kwargs) -> None:
+    def setup_agent(self, prompt_path: str, model: str,
+                    temperature: float = 0.0, schema_file_path: str = None) -> None:
         instructions = self.prompt_record.get(prompt_path)
-        agent_id = self.external_manager.create_agent(
-            self.agent_name, instructions, model, **kwargs
+        agent = AgentDefinition(
+            name=self.agent_name,
+            model=model,
+            instructions=instructions,
+            temperature=temperature,
+            schema_file_path=schema_file_path,
         )
-        self.agent_record.create(self.agent_name, agent_id)
+        self.external_manager.create_agent(agent)
+        self.agent_record.save(agent)
 
     def get_model(self) -> str:
-        agent_id = self.agent_record.get_id(self.agent_name)
-        return self.external_manager.get_model(agent_id)
+        agent = self.agent_record.get(self.agent_name)
+        return self.external_manager.get_model(agent)
 
     def change_model(self, new_model: str) -> None:
-        agent_id = self.agent_record.get_id(self.agent_name)
-        self.external_manager.change_model(agent_id, new_model)
+        agent = self.agent_record.get(self.agent_name)
+        self.external_manager.change_model(agent, new_model)
+        self.agent_record.save(replace(agent, model=new_model))
 
     def delete_agent(self) -> None:
-        agent_id = self.agent_record.get_id(self.agent_name)
-        self.external_manager.delete_agent(agent_id)
+        agent = self.agent_record.get(self.agent_name)
+        self.external_manager.delete_agent(agent)
         self.agent_record.delete(self.agent_name)
 
     def list_agent_records(self) -> None:
@@ -40,35 +49,3 @@ class AgentManager:
             print(f"Name: {record_name}")
         if not agent_record_names:
             print("No AgentRecords were found in local storage.")
-
-    def delete_invalid_agent_records(self) -> None:
-        openai_assistants = self.external_manager.list_agents()
-
-        print("OpenAI Assistants found:")
-        for name, ids in openai_assistants.items():
-            print(f"  {name}: {sorted(ids)}")
-
-        agent_record_names = self.agent_record.list_names()
-        print("\nAgentRecords found in local storage:")
-        for name in agent_record_names:
-            stored_id = self.agent_record.get_id(name)
-            print(f"  {name}: {stored_id}")
-
-        no_name_match = []
-        id_mismatch = []
-        for name in agent_record_names:
-            if name not in openai_assistants:
-                no_name_match.append(name)
-            elif self.agent_record.get_id(name) not in openai_assistants[name]:
-                id_mismatch.append(name)
-
-        print("\nAgentRecords deleted (name not found in OpenAI):")
-        for name in no_name_match:
-            print(f"  {name}")
-            self.agent_record.delete(name)
-
-        print("\nAgentRecords deleted (name exists in OpenAI but stored ID does not match any of its IDs):")
-        for name in id_mismatch:
-            stored_id = self.agent_record.get_id(name)
-            print(f"  {name}: local={stored_id}, OpenAI={sorted(openai_assistants[name])}")
-            self.agent_record.delete(name)

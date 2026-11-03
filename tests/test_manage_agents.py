@@ -8,10 +8,21 @@ Pattern:
 """
 
 import sys
+import json
 from unittest.mock import MagicMock
 import pytest
 
 import manage_agents
+from code.domain.contracts.agent_record import AgentDefinition
+
+
+AGENT = AgentDefinition(
+    name="myAgent",
+    model="gpt-4o",
+    instructions="system instructions",
+    temperature=0.0,
+    schema_file_path=None,
+)
 
 
 @pytest.fixture
@@ -32,13 +43,25 @@ def _run_cli(monkeypatch, argv, fake_external):
     manage_agents.main()
 
 
+def _write_record(tmp_path, agent: AgentDefinition):
+    rec_path = tmp_path / "data" / "agent_records" / f"agent_{agent.name}.json"
+    rec_path.parent.mkdir(parents=True, exist_ok=True)
+    rec_path.write_text(json.dumps({
+        "name": agent.name,
+        "model": agent.model,
+        "instructions": agent.instructions,
+        "temperature": agent.temperature,
+        "schema_file_path": agent.schema_file_path,
+    }))
+    return rec_path
+
+
 # ---------- create ----------
 
 def test_create_wires_setup_agent(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "data" / "prompts").mkdir(parents=True)
     (tmp_path / "data" / "prompts" / "p.txt").write_text("system instructions")
-    fake_external.create_agent.return_value = "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
 
     _run_cli(
         monkeypatch,
@@ -52,25 +75,25 @@ def test_create_wires_setup_agent(monkeypatch, tmp_path, fake_external):
         fake_external,
     )
 
-    fake_external.create_agent.assert_called_once()
-    args, kwargs = fake_external.create_agent.call_args
-    assert args[0] == "myAgent"
-    assert args[1] == "system instructions"
-    assert args[2] == "gpt-4o"
-    assert kwargs["temperature"] == 0.3
+    expected = AgentDefinition(
+        name="myAgent",
+        model="gpt-4o",
+        instructions="system instructions",
+        temperature=0.3,
+        schema_file_path=None,
+    )
+    fake_external.create_agent.assert_called_once_with(expected)
 
     # Record file was written
-    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
-    assert rec_path.read_text() == "asst_nnnnnnnnnnnnnnnnnnnnnnnn"
+    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.json"
+    assert AgentDefinition(**json.loads(rec_path.read_text())) == expected
 
 
 # ---------- delete ----------
 
 def test_delete_wires_delete_agent(monkeypatch, tmp_path, fake_external):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
-    rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    rec_path = _write_record(tmp_path, AGENT)
 
     _run_cli(
         monkeypatch,
@@ -78,7 +101,7 @@ def test_delete_wires_delete_agent(monkeypatch, tmp_path, fake_external):
         fake_external,
     )
 
-    fake_external.delete_agent.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    fake_external.delete_agent.assert_called_once_with(AGENT)
     assert not rec_path.exists()
 
 
@@ -86,9 +109,7 @@ def test_delete_wires_delete_agent(monkeypatch, tmp_path, fake_external):
 
 def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
-    rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    rec_path = _write_record(tmp_path, AGENT)
 
     _run_cli(
         monkeypatch,
@@ -100,7 +121,8 @@ def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, c
         fake_external,
     )
 
-    fake_external.change_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx", "gpt-4o-mini")
+    fake_external.change_model.assert_called_once_with(AGENT, "gpt-4o-mini")
+    assert json.loads(rec_path.read_text())["model"] == "gpt-4o-mini"
     out = capsys.readouterr().out
     assert "Model updated to 'gpt-4o-mini'" in out
 
@@ -109,9 +131,7 @@ def test_change_model_wires_change_model(monkeypatch, tmp_path, fake_external, c
 
 def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    rec_path = tmp_path / "data" / "agent_records" / "agent_myAgent.txt"
-    rec_path.parent.mkdir(parents=True)
-    rec_path.write_text("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    _write_record(tmp_path, AGENT)
     fake_external.get_model.return_value = "gpt-4o"
 
     _run_cli(
@@ -120,7 +140,7 @@ def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_extern
         fake_external,
     )
 
-    fake_external.get_model.assert_called_once_with("asst_xxxxxxxxxxxxxxxxxxxxxxxx")
+    fake_external.get_model.assert_called_once_with(AGENT)
     out = capsys.readouterr().out
     assert "is using model: 'gpt-4o'" in out
 
@@ -129,10 +149,8 @@ def test_get_model_wires_get_model_and_prints(monkeypatch, tmp_path, fake_extern
 
 def test_get_all_prints_local_record_names(monkeypatch, tmp_path, fake_external, capsys):
     monkeypatch.chdir(tmp_path)
-    recs = tmp_path / "data" / "agent_records"
-    recs.mkdir(parents=True)
-    (recs / "agent_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")
-    (recs / "agent_bob.txt").write_text("asst_bbbbbbbbbbbbbbbbbbbbbbbb")
+    _write_record(tmp_path, AgentDefinition(name="alice", model="gpt-4o", instructions="x"))
+    _write_record(tmp_path, AgentDefinition(name="bob", model="gpt-4o", instructions="x"))
 
     _run_cli(
         monkeypatch,
@@ -143,8 +161,8 @@ def test_get_all_prints_local_record_names(monkeypatch, tmp_path, fake_external,
     out = capsys.readouterr().out
     assert "Name: alice" in out
     assert "Name: bob" in out
-    # Should NOT touch OpenAI for a get-all
-    fake_external.list_agents.assert_not_called()
+    # Should NOT touch the provider for a get-all
+    assert fake_external.mock_calls == []
 
 
 def test_get_all_empty_prints_empty_message(monkeypatch, tmp_path, fake_external, capsys):
@@ -156,38 +174,6 @@ def test_get_all_empty_prints_empty_message(monkeypatch, tmp_path, fake_external
     )
     out = capsys.readouterr().out
     assert "No AgentRecords were found in local storage." in out
-
-
-# ---------- delete-invalid ----------
-
-def test_delete_invalid_removes_local_records_and_skips_openai_deletion(
-    monkeypatch, tmp_path, fake_external
-):
-    monkeypatch.chdir(tmp_path)
-    recs = tmp_path / "data" / "agent_records"
-    recs.mkdir(parents=True)
-    (recs / "agent_alice.txt").write_text("asst_aaaaaaaaaaaaaaaaaaaaaaaa")        # valid
-    (recs / "agent_bob.txt").write_text("asst_wwwwwwwwwwwwwwwwwwwwwwww")      # id mismatch
-    (recs / "agent_ghost.txt").write_text("asst_gggggggggggggggggggggggg")        # name missing
-
-    fake_external.list_agents.return_value = {
-        "alice": {"asst_aaaaaaaaaaaaaaaaaaaaaaaa"},
-        "bob": {"asst_bbbbbbbbbbbbbbbbbbbbbbbb"},
-    }
-
-    _run_cli(
-        monkeypatch,
-        ["manage_agents.py", "delete-invalid"],
-        fake_external,
-    )
-
-    # Valid record stays; the other two are removed locally
-    assert (recs / "agent_alice.txt").exists()
-    assert not (recs / "agent_bob.txt").exists()
-    assert not (recs / "agent_ghost.txt").exists()
-
-    # OpenAI-side deletion must never happen here
-    fake_external.delete_agent.assert_not_called()
 
 
 # ---------- argparse errors ----------

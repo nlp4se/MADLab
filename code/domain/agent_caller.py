@@ -14,11 +14,11 @@ class AgentCaller:
         return self.external_caller.start_session()
 
     def submit_message(self, message: str, agent_name: str, **kwargs) -> Tuple[str, Dict]:
-        agent_id = self.agent_record.get_id(agent_name)
+        agent = self.agent_record.get(agent_name)
         session_id = kwargs.pop('session_id', None) or kwargs.pop('thread_id', None)
         if session_id is None:
             session_id = self.start_session()
-        return self.external_caller.send_message(message, agent_id, session_id, **kwargs)
+        return self.external_caller.send_message(message, agent, session_id, **kwargs)
 
     def process_with_metrics(self, message: str, agent_name: str, **kwargs) -> Dict:
         start_time = datetime.now()

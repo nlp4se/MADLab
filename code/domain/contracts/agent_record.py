@@ -1,13 +1,23 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AgentDefinition:
+    name: str
+    model: str
+    instructions: str
+    temperature: float = 0.0
+    schema_file_path: str | None = None
 
 
 class AgentRecord(ABC):
     @abstractmethod
-    def get_id(self, name: str) -> str:
+    def get(self, name: str) -> AgentDefinition:
         pass
 
     @abstractmethod
-    def create(self, name: str, id: str) -> None:
+    def save(self, agent: AgentDefinition) -> None:
         pass
 
     @abstractmethod

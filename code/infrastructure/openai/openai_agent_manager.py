@@ -1,79 +1,44 @@
-import os
-import json
-from openai import OpenAI, NotFoundError, BadRequestError
-from typing import Dict
+from dataclasses import replace
+
+from openai import OpenAI, OpenAIError
 
 from ...domain.contracts.external_agent_manager import ExternalAgentManager
+from ...domain.contracts.agent_record import AgentDefinition
+from .openai_agent_caller import build_text_format
 
 
 class OpenAIAgentManager(ExternalAgentManager):
+    MIN_TEMPERATURE = 0.0
+    MAX_TEMPERATURE = 2.0
+
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
 
-    def _get_json_schema(self, schema_file_path: str = None) -> Dict:
-        if schema_file_path and os.path.exists(schema_file_path):
-            with open(schema_file_path, 'r', encoding='utf-8') as f:
-                return {"type": "json_schema", "json_schema": json.loads(f.read())}
-        return None
-
-    def create_agent(self, name: str, instructions: str, model: str = "gpt-4o", **kwargs) -> str:
-        temperature = kwargs.get('temperature', 0.0)
-        schema_file_path = kwargs.get('schema_file_path', None)
-
-        print("Creating a new OpenAI Assistant...")
-        assistant = self.client.beta.assistants.create(
-            name=name,
-            instructions=instructions,
-            model=model,
-            temperature=temperature,
-            response_format=self._get_json_schema(schema_file_path)
-        )
-        print(f"OpenAI Assistant created successfully. ID: {assistant.id} with Model: {model}")
-        return assistant.id
-
-    def get_model(self, agent_id: str) -> str:
+    def _validate_agent(self, agent: AgentDefinition) -> None:
         try:
-            assistant = self.client.beta.assistants.retrieve(agent_id)
-            return assistant.model
-        except NotFoundError:
+            self.client.responses.create(
+                model=agent.model,
+                instructions=agent.instructions,
+                input="ping",
+                temperature=agent.temperature,
+                text=build_text_format(agent.schema_file_path),
+                max_output_tokens=16,
+                store=False,
+            )
+        except OpenAIError as e:
+            raise ValueError(f"OpenAI rejected agent '{agent.name}' (model '{agent.model}'): {e}")
+
+    def _validate_temperature(self, temperature: float) -> None:
+        if not self.MIN_TEMPERATURE <= temperature <= self.MAX_TEMPERATURE:
             raise ValueError(
-                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
-                f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
+                f"Temperature {temperature} is out of range for OpenAI "
+                f"({self.MIN_TEMPERATURE} to {self.MAX_TEMPERATURE})."
             )
 
-    def change_model(self, agent_id: str, new_model: str) -> None:
-        try:
-            self.client.beta.assistants.update(agent_id, model=new_model)
-        except NotFoundError:
-            raise ValueError(
-                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
-                f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
-            )
+    def create_agent(self, agent: AgentDefinition) -> None:
+        self._validate_temperature(agent.temperature)
+        self._validate_agent(agent)
 
-    def delete_agent(self, agent_id: str) -> None:
-        try:
-            self.client.beta.assistants.delete(agent_id)
-        except NotFoundError:
-            raise ValueError(
-                f"OpenAI Assistant with ID '{agent_id}' not found in OpenAI. "
-                f"The AgentRecord may be stale. Run 'delete-invalid' to clean up orphaned AgentRecords."
-            )
-        except BadRequestError as e:
-            if e.code == 'invalid_value':
-                raise ValueError(
-                    f"The AgentRecord contains an invalid OpenAI Assistant ID: '{agent_id}'. "
-                    f"The record is corrupted. Run 'delete-invalid' to clean up orphaned AgentRecords."
-                )
-            raise
-
-    def list_agents(self) -> dict[str, set[str]]:
-        openai_assistants: dict[str, set[str]] = {}
-        page = self.client.beta.assistants.list(limit=100)
-        while True:
-            for assistant in page.data:
-                openai_assistants.setdefault(assistant.name, set()).add(assistant.id)
-            if not page.has_next_page():
-                break
-            page = page.get_next_page()
-        return openai_assistants
+    def change_model(self, agent: AgentDefinition, new_model: str) -> None:
+        self._validate_agent(replace(agent, model=new_model))

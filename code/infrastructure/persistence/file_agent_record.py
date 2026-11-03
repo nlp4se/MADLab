@@ -1,6 +1,8 @@
 import os
+import json
+from dataclasses import asdict
 
-from ...domain.contracts.agent_record import AgentRecord
+from ...domain.contracts.agent_record import AgentRecord, AgentDefinition
 
 
 class FileAgentRecord(AgentRecord):
@@ -8,38 +10,45 @@ class FileAgentRecord(AgentRecord):
         self.base_dir = base_dir
 
     def _path(self, name: str) -> str:
-        return os.path.join(self.base_dir, f"agent_{name}.txt")
+        return os.path.join(self.base_dir, f"agent_{name}.json")
 
-    def get_id(self, name: str) -> str:
+    def get(self, name: str) -> AgentDefinition:
         path = self._path(name)
         try:
-            with open(path, 'r') as f:
-                agent_id = f.read().strip()
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"No AgentRecord found for '{name}'. "
-                f"Make sure the OpenAI Assistant has been created and registered first."
+                f"Create the agent first with 'manage_agents.py create'."
             )
-        if not agent_id:
+        except json.JSONDecodeError:
             raise ValueError(
-                f"AgentRecord for '{name}' is empty. "
+                f"AgentRecord for '{name}' is not valid JSON. "
                 f"The file may be corrupted: '{path}'"
             )
-        return agent_id
+        try:
+            return AgentDefinition(**data)
+        except TypeError:
+            raise ValueError(
+                f"AgentRecord for '{name}' has missing or unexpected fields. "
+                f"The file may be corrupted: '{path}'"
+            )
 
-    def create(self, name: str, id: str) -> None:
+    def save(self, agent: AgentDefinition) -> None:
         os.makedirs(self.base_dir, exist_ok=True)
-        with open(self._path(name), 'w') as f:
-            f.write(id)
-        print(f"AgentRecord '{name}' saved locally with ID: '{id}'")
+        path = self._path(agent.name)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(asdict(agent), f, indent=2, ensure_ascii=False)
+        print(f"AgentRecord '{agent.name}' saved locally at '{path}'")
 
     def list_names(self) -> list[str]:
         if not os.path.exists(self.base_dir):
             return []
         names = []
         for filename in os.listdir(self.base_dir):
-            if filename.startswith("agent_") and filename.endswith(".txt"):
-                names.append(filename[len("agent_"):-len(".txt")])
+            if filename.startswith("agent_") and filename.endswith(".json"):
+                names.append(filename[len("agent_"):-len(".json")])
         return names
 
     def delete(self, name: str) -> bool:
