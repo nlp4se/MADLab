@@ -1,0 +1,359 @@
+---
+/**
+ * Patterns gallery page (task 9.3, Req 13.4).
+ *
+ * Illustrates the common MAD patterns — persona patterns, functional roles, and
+ * topology diagrams — using the SAME shared SVGs the frontend designer consumes
+ * (via <Icon />, Req 13.4) and the SAME committed taxonomy snapshot the rest of
+ * the site is driven by (`src/data/taxonomy.ts`). The site is static, so there
+ * are no backend calls at runtime (Req 13.1).
+ *
+ * Each section is colour-themed with the shared dimension tokens via
+ * `data-dimension`, keeping the three dimensions visually distinct and
+ * consistent with the Taxonomy page and the frontend (Reqs 13.3, 13.5):
+ *
+ *   - Persona patterns → Participants (indigo)
+ *   - Roles            → Participants (indigo)
+ *   - Topologies       → Interaction (teal)
+ */
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Icon from "../components/Icon.astro";
+import { taxonomy } from "../data/taxonomy";
+
+const { persona_patterns, roles, topologies } = taxonomy.templates;
+
+// Index patterns by key so a pattern can resolve its paired counterpart's label.
+const patternLabel = new Map(persona_patterns.map((p) => [p.key, p.label]));
+
+const sections = [
+  { id: "persona-patterns", label: "Persona patterns" },
+  { id: "roles", label: "Roles" },
+  { id: "topologies", label: "Topologies" },
+];
+---
+
+<BaseLayout
+  title="Patterns — MAD Documentation"
+  description="Illustrated gallery of MAD persona patterns, functional roles, and topology diagrams."
+>
+  <section class="intro">
+    <h1>Patterns gallery</h1>
+    <p class="lede">
+      The building blocks the designer offers as ready-made templates:
+      the persona patterns that shape participants, the functional roles an
+      agent can take, and the canonical interaction topologies. Everything is
+      illustrated with the same shared icons the product uses and driven by the
+      catalog snapshot.
+    </p>
+    <nav class="jump" aria-label="Jump to section">
+      {sections.map((s) => (
+        <a href={`#${s.id}`}>{s.label}</a>
+      ))}
+    </nav>
+  </section>
+
+  <!-- Persona patterns — Participants (indigo). -->
+  <section id="persona-patterns" class="gallery" data-dimension="participants" aria-labelledby="persona-patterns-h">
+    <header class="gallery__header">
+      <h2 id="persona-patterns-h">Persona patterns</h2>
+      <p>
+        Predefined persona templates from the paper. Each pattern carries one or
+        more personas with a background, personality, and stance; some come as an
+        adversarial <em>pair</em>, others as a full <em>set</em>. All remain fully
+        editable once applied.
+      </p>
+    </header>
+
+    <div class="cards">
+      {persona_patterns.map((pattern) => (
+        <article class="card pattern">
+          <div class="card__head">
+            <h3>{pattern.label}</h3>
+            {pattern.is_set ? (
+              <span class="tag tag--set" title={`Set of ${pattern.personas.length} personas`}>
+                Set · {pattern.personas.length}
+              </span>
+            ) : pattern.pair_with ? (
+              <span class="tag tag--pair">
+                Pairs with {patternLabel.get(pattern.pair_with) ?? pattern.pair_with}
+              </span>
+            ) : (
+              <span class="tag tag--single">Single</span>
+            )}
+          </div>
+          <p class="card__desc">{pattern.description}</p>
+
+          <ul class="personas">
+            {pattern.personas.map((persona) => (
+              <li class="persona">
+                <p class="persona__name">{persona.name}</p>
+                {persona.background && (
+                  <p class="persona__attr">
+                    <span class="persona__attr-label">Background</span>
+                    {persona.background}
+                  </p>
+                )}
+                {persona.personality && (
+                  <p class="persona__attr">
+                    <span class="persona__attr-label">Personality</span>
+                    {persona.personality}
+                  </p>
+                )}
+                {persona.stance && (
+                  <p class="persona__attr">
+                    <span class="persona__attr-label">Stance</span>
+                    {persona.stance}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- Roles — Participants (indigo), each with its shared role SVG. -->
+  <section id="roles" class="gallery" data-dimension="participants" aria-labelledby="roles-h">
+    <header class="gallery__header">
+      <h2 id="roles-h">Roles</h2>
+      <p>
+        The functional roles an agent can take in a debate. A single participant
+        may combine several. Each is illustrated with its shared role icon.
+      </p>
+    </header>
+
+    <div class="cards cards--roles">
+      {roles.map((role) => (
+        <article class="card role">
+          <span class="role__icon" aria-hidden="true">
+            <Icon kind="role" name={role.key} size={40} />
+          </span>
+          <div class="role__body">
+            <h3>{role.label}</h3>
+            <p class="card__desc">{role.description}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- Topologies — Interaction (teal), each with its shared topology SVG. -->
+  <section id="topologies" class="gallery" data-dimension="interaction" aria-labelledby="topologies-h">
+    <header class="gallery__header">
+      <h2 id="topologies-h">Topology diagrams</h2>
+      <p>
+        The canonical interaction topologies offered as selectable templates.
+        Applying one auto-generates the corresponding nodes and edges in the
+        designer. Each is illustrated with its shared topology diagram.
+      </p>
+    </header>
+
+    <div class="cards cards--topologies">
+      {topologies.map((topology) => (
+        <article class="card topology">
+          <span class="topology__diagram" aria-hidden="true">
+            <Icon kind="topology" name={topology.key} size={72} />
+          </span>
+          <div class="topology__body">
+            <h3>{topology.label}</h3>
+            <p class="card__desc">{topology.description}</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <style>
+    .intro {
+      margin-bottom: 2.5rem;
+    }
+    .intro h1 {
+      font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+      margin: 0 0 0.5rem;
+    }
+    .lede {
+      max-width: 48rem;
+      color: hsl(var(--muted-fg));
+      font-size: 1.05rem;
+    }
+    .jump {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 1.5rem;
+    }
+    .jump a {
+      border: 1px solid hsl(var(--border));
+      color: hsl(var(--fg));
+      border-radius: 999px;
+      padding: 0.3rem 0.9rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .jump a:hover {
+      text-decoration: none;
+      border-color: hsl(var(--interaction));
+      color: hsl(var(--interaction));
+    }
+
+    /* Each gallery section themed by its data-dimension accent. */
+    .gallery {
+      margin-bottom: 3.5rem;
+      scroll-margin-top: 4rem;
+    }
+    .gallery__header {
+      border-left: 4px solid hsl(var(--accent));
+      padding: 0.75rem 0 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .gallery__header h2 {
+      margin: 0 0 0.35rem;
+      color: hsl(var(--accent));
+      font-size: 1.6rem;
+    }
+    .gallery__header p {
+      margin: 0;
+      color: hsl(var(--muted-fg));
+      max-width: 48rem;
+    }
+
+    .cards {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    }
+    .card {
+      border: 1px solid hsl(var(--border));
+      border-top: 3px solid hsl(var(--accent));
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem 1.25rem;
+      background: hsl(var(--card));
+    }
+    .card__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .card__head h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    .card__desc {
+      margin: 0.4rem 0 0;
+      color: hsl(var(--muted-fg));
+      font-size: 0.9rem;
+    }
+
+    /* Pattern / pair / set tags. */
+    .tag {
+      flex: none;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    .tag--set,
+    .tag--pair,
+    .tag--single {
+      color: hsl(var(--accent));
+      background: hsl(var(--accent-muted));
+      border: 1px solid hsl(var(--accent) / 0.3);
+    }
+
+    /* Persona list inside each pattern card. */
+    .personas {
+      list-style: none;
+      margin: 1rem 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .persona {
+      border: 1px solid hsl(var(--border));
+      border-left: 3px solid hsl(var(--accent) / 0.5);
+      border-radius: var(--radius);
+      padding: 0.6rem 0.75rem;
+      background: hsl(var(--accent-muted) / 0.4);
+    }
+    .persona__name {
+      margin: 0 0 0.35rem;
+      font-weight: 700;
+      color: hsl(var(--fg));
+    }
+    .persona__attr {
+      margin: 0.25rem 0 0;
+      font-size: 0.85rem;
+      color: hsl(var(--muted-fg));
+    }
+    .persona__attr-label {
+      display: inline-block;
+      min-width: 5.5rem;
+      margin-right: 0.4rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: hsl(var(--accent));
+      vertical-align: baseline;
+    }
+
+    /* Roles grid: icon beside label + description. */
+    .cards--roles {
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    }
+    .role {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .role__icon {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3.25rem;
+      height: 3.25rem;
+      border-radius: var(--radius);
+      color: hsl(var(--accent));
+      background: hsl(var(--accent-muted));
+    }
+    .role__body h3 {
+      margin: 0 0 0.15rem;
+      font-size: 1.1rem;
+    }
+
+    /* Topology grid: large centred diagram above label + description. */
+    .cards--topologies {
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    }
+    .topology {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .topology__diagram {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 6rem;
+      margin-bottom: 0.75rem;
+      color: hsl(var(--accent));
+    }
+    .topology__body h3 {
+      margin: 0 0 0.15rem;
+      font-size: 1.1rem;
+    }
+    .topology .card__desc {
+      max-width: 22rem;
+    }
+  </style>
+</BaseLayout>

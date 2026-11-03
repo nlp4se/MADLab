@@ -1,0 +1,994 @@
+{
+  "dimensions": [
+    {
+      "key": "participants",
+      "label": "Participants",
+      "description": "Who debates: persona design, functional roles, and base-model selection for each agent (node v in V).",
+      "subdimensions": [
+        {
+          "key": "persona_attributes",
+          "label": "Persona attributes",
+          "description": "The three prompt-designed persona attribute families; each is a free-form field, not a mutually-exclusive choice.",
+          "selection": "attributes",
+          "values": [
+            {
+              "key": "background",
+              "label": "Background",
+              "description": "The identity, knowledge, and expertise of the agent.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "personality",
+              "label": "Personality",
+              "description": "Behavioural tendencies that shape how an agent debates.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "stance",
+              "label": "Stance",
+              "description": "A predefined positioning on the topic under discussion.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "persona_heterogeneity",
+          "label": "Persona heterogeneity",
+          "description": "Whether debaters share one persona or are assigned distinct personas.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "homogeneous",
+              "label": "Homogeneous",
+              "description": "All debaters share the same persona.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "heterogeneous",
+              "label": "Heterogeneous",
+              "description": "Debaters are assigned distinct personas.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "persona_assignment",
+          "label": "Persona assignment",
+          "description": "How personas are assigned to debaters.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "unspecified",
+              "label": "Unspecified",
+              "description": "No explicit persona is assigned.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "manual",
+              "label": "Manually identified",
+              "description": "Personas are assigned manually at design time.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "automatic",
+              "label": "Automatically identified",
+              "description": "Personas are automatically assigned at runtime.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "roles",
+          "label": "Roles",
+          "description": "The functional roles an agent can take; a single participant may combine multiple roles.",
+          "selection": "multi",
+          "values": [
+            {
+              "key": "debater",
+              "label": "Debater",
+              "description": "Presents and defends positions, engaging in the exchange to reach consensus.",
+              "default": true,
+              "executable": true,
+              "icon": "role/debater"
+            },
+            {
+              "key": "judge",
+              "label": "Judge",
+              "description": "Delivers the final decision and may determine when consensus is reached.",
+              "default": false,
+              "executable": true,
+              "icon": "role/judge"
+            },
+            {
+              "key": "summarizer",
+              "label": "Summarizer",
+              "description": "Synthesizes debaters' statements to reduce token consumption.",
+              "default": false,
+              "executable": true,
+              "icon": "role/summarizer"
+            },
+            {
+              "key": "leader",
+              "label": "Leader",
+              "description": "Oversees and guides the debate (also called moderator).",
+              "default": false,
+              "executable": true,
+              "icon": "role/leader"
+            },
+            {
+              "key": "verifier",
+              "label": "Verifier",
+              "description": "Fact-checks the statements produced by debaters.",
+              "default": false,
+              "executable": true,
+              "icon": "role/verifier"
+            },
+            {
+              "key": "editor",
+              "label": "Editor",
+              "description": "Refines and produces the final response from the debate outcome.",
+              "default": false,
+              "executable": true,
+              "icon": "role/editor"
+            }
+          ]
+        },
+        {
+          "key": "base_model_family",
+          "label": "Base model family",
+          "description": "Whether the base model is proprietary or publicly available.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "closed_weight",
+              "label": "Closed-weight",
+              "description": "Proprietary parameters, accessed via an external provider.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "open_weight",
+              "label": "Open-weight",
+              "description": "Publicly available parameters, deployable locally.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "base_model_heterogeneity",
+          "label": "Base model heterogeneity",
+          "description": "Whether all agents share one base model or draw on different ones.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "homogeneous",
+              "label": "Homogeneous",
+              "description": "All agents share the same base model.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "heterogeneous",
+              "label": "Heterogeneous",
+              "description": "Agents draw on different base models.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "interaction",
+      "label": "Interaction",
+      "description": "How agents communicate: topology (G=(V,E)), protocol (temporal edge activation E(t)), and message format (transformations m~=f(m)).",
+      "subdimensions": [
+        {
+          "key": "topology_adaptability",
+          "label": "Topology adaptability",
+          "description": "Whether communication channels change throughout the debate (E(t)).",
+          "selection": "single",
+          "values": [
+            {
+              "key": "static",
+              "label": "Static",
+              "description": "Communication channels remain unchanged throughout the debate.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "dynamic",
+              "label": "Dynamic",
+              "description": "Communication channels adapt throughout the debate.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "topology_structure",
+          "label": "Topology structure",
+          "description": "The overall shape of the communication graph G=(V,E).",
+          "selection": "single",
+          "values": [
+            {
+              "key": "fully_connected",
+              "label": "Fully connected",
+              "description": "All agents interact with each other.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "grouped",
+              "label": "Divided into groups",
+              "description": "Agents interact within disconnected subgroups.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "structured_network",
+              "label": "Structured networks",
+              "description": "Interaction follows a predefined network topology.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "topology_pattern",
+          "label": "Topology pattern",
+          "description": "Canonical structured-network patterns selectable when the structure is a structured network.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "chain",
+              "label": "Chain",
+              "description": "A linear topology where each agent builds on its predecessor.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/chain"
+            },
+            {
+              "key": "ring",
+              "label": "Ring",
+              "description": "A cyclic chain where each agent communicates with a fixed neighbour set.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/ring"
+            },
+            {
+              "key": "star",
+              "label": "Star",
+              "description": "A centralized topology where a single node aggregates from all others.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/star"
+            },
+            {
+              "key": "tree",
+              "label": "Tree",
+              "description": "A hierarchical topology enabling recursive decomposition of reasoning.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/tree"
+            },
+            {
+              "key": "layered",
+              "label": "Layered network",
+              "description": "A multi-stage topology where agents form sequential layers, each performing a distinct transformation.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/layered"
+            },
+            {
+              "key": "sparse",
+              "label": "Sparse",
+              "description": "Each agent interacts with a limited subset of peers (|E| << |V|(|V|-1)).",
+              "default": false,
+              "executable": true,
+              "icon": "topology/sparse"
+            },
+            {
+              "key": "bipartite",
+              "label": "Bipartite",
+              "description": "Agents split into two disjoint sets interacting primarily across the partition.",
+              "default": false,
+              "executable": true,
+              "icon": "topology/bipartite"
+            }
+          ]
+        },
+        {
+          "key": "protocol_mechanism",
+          "label": "Protocol mechanism",
+          "description": "How agents take turns contributing to the debate.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "sequential",
+              "label": "Sequential",
+              "description": "Agents intervene in ordered turns.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "simultaneous",
+              "label": "Simultaneous",
+              "description": "Agents contribute to the debate at the same time.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "hybrid",
+              "label": "Hybrid",
+              "description": "Combines sequential and simultaneous exchanges.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "protocol_ordering",
+          "label": "Protocol ordering",
+          "description": "How speaking order is determined for sequential turn-taking.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "fixed",
+              "label": "Fixed",
+              "description": "A predefined speaking order.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "randomized",
+              "label": "Randomized",
+              "description": "Randomized turn-taking to mitigate ordering/dominance bias.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "coordinator",
+              "label": "Coordinator-selected",
+              "description": "A coordinator/leader agent selects the next speaker from the evolving context.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "format_syntax",
+          "label": "Format syntax",
+          "description": "The representation in which arguments are exchanged.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "natural_language",
+              "label": "Natural language",
+              "description": "Arguments are exchanged in human-readable text.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "embeddings",
+              "label": "Embeddings",
+              "description": "Arguments are exchanged as vector embeddings directly.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "format_content",
+          "label": "Format content",
+          "description": "How argument content is transformed before being shared.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "verbatim",
+              "label": "Verbatim",
+              "description": "Full arguments are shared without modification.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "summarized",
+              "label": "Summarized",
+              "description": "Arguments are compressed into shorter representations.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "other",
+              "label": "Other",
+              "description": "Alternative content transformation strategies are applied.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "format_content_metadata",
+          "label": "Format content metadata",
+          "description": "Optional signals attachable to an exchange, used to weight or guide aggregation.",
+          "selection": "multi",
+          "values": [
+            {
+              "key": "confidence",
+              "label": "Confidence",
+              "description": "An agent's degree of certainty, used to weight aggregation.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "uncertainty",
+              "label": "Uncertainty",
+              "description": "Typically the inverse of confidence.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "verifier_score",
+              "label": "Verifier score",
+              "description": "A dedicated component scores answers and intermediate reasoning.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "judge_likelihood",
+              "label": "Judge likelihood",
+              "description": "A judge assigns a plausibility signal used for final selection.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "bias_quality",
+              "label": "Bias/quality score",
+              "description": "Auxiliary agents compute bias or quality scores to guide selection.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "guideline_weight",
+              "label": "Guideline weight",
+              "description": "External signals encoding priorities such as utility or fairness.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "format_memory",
+          "label": "Format memory",
+          "description": "The scope of context an agent can access.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "short_term",
+              "label": "Short-term",
+              "description": "Access limited to current debate context.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "long_term",
+              "label": "Long-term",
+              "description": "Access extends to persistent memory across debates.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            },
+            {
+              "key": "knowledge_retrieval",
+              "label": "Knowledge retrieval",
+              "description": "Agents query external knowledge sources.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            },
+            {
+              "key": "parametric",
+              "label": "Parametric",
+              "description": "Debates embedded into model parameters through training.",
+              "default": false,
+              "executable": false,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "agreement",
+      "label": "Agreement",
+      "description": "How the debate resolves to a final output: the (authority, resolution) pair.",
+      "subdimensions": [
+        {
+          "key": "authority",
+          "label": "Authority",
+          "description": "Who holds the power to make the final decision.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "collective",
+              "label": "Collective",
+              "description": "The final decision is made jointly by multiple agents.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "judge_based",
+              "label": "Judge-based",
+              "description": "The final decision is made by a designated judge agent.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "hybrid",
+              "label": "Hybrid",
+              "description": "The final decision combines collective and judge-based authority.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "other",
+              "label": "Other",
+              "description": "User-dependent, undefined, or non-standard decision authority.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        },
+        {
+          "key": "resolution",
+          "label": "Resolution",
+          "description": "The mechanism by which the debate resolves to a final output.",
+          "selection": "single",
+          "values": [
+            {
+              "key": "majority_vote",
+              "label": "Majority vote",
+              "description": "The option supported by most agents is selected.",
+              "default": true,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "argument_evaluation",
+              "label": "Argument evaluation",
+              "description": "The decision is made by evaluating the debate.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "weighted_vote",
+              "label": "Weighted vote",
+              "description": "Votes are aggregated with agent-specific weights.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "scoring",
+              "label": "Scoring",
+              "description": "The decision is made through agent response scoring and ranking.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "average",
+              "label": "Average",
+              "description": "The decision is derived by averaging agent outputs or scores.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            },
+            {
+              "key": "consensus",
+              "label": "Consensus",
+              "description": "Agents deliberate until reaching a common agreement.",
+              "default": false,
+              "executable": true,
+              "icon": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "templates": {
+    "persona_patterns": [
+      {
+        "key": "angel",
+        "label": "Angel",
+        "description": "The optimistic, supportive advocate who argues the favourable position.",
+        "pair_with": "devil",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Angel",
+            "background": "A constructive advocate who looks for merits and the strongest supporting case.",
+            "personality": "Optimistic, encouraging, and charitable in interpreting the proposal.",
+            "stance": "Argue in favour of the proposition and defend its strengths."
+          }
+        ]
+      },
+      {
+        "key": "devil",
+        "label": "Devil (devil's advocate)",
+        "description": "The adversarial critic who argues the opposing, sceptical position.",
+        "pair_with": "angel",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Devil",
+            "background": "A sceptical critic trained to surface flaws, risks, and counter-arguments.",
+            "personality": "Adversarial, probing, and relentless in testing weak points.",
+            "stance": "Argue against the proposition and expose its weaknesses."
+          }
+        ]
+      },
+      {
+        "key": "prosecution",
+        "label": "Prosecution",
+        "description": "The accusing party in an adversarial legal-style debate.",
+        "pair_with": "defence",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Prosecution",
+            "background": "A prosecutor building the case that the claim/charge holds.",
+            "personality": "Assertive, evidence-driven, and persuasive.",
+            "stance": "Argue that the claim is true / the charge is warranted."
+          }
+        ]
+      },
+      {
+        "key": "defence",
+        "label": "Defence",
+        "description": "The defending party in an adversarial legal-style debate.",
+        "pair_with": "prosecution",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Defence",
+            "background": "A defender rebutting the case and raising reasonable doubt.",
+            "personality": "Measured, meticulous, and protective of the defendant's position.",
+            "stance": "Argue that the claim is unproven / the charge is unwarranted."
+          }
+        ]
+      },
+      {
+        "key": "faithful",
+        "label": "Faithful",
+        "description": "Argues that a summary/answer is faithful to its source (summary-evaluation pair).",
+        "pair_with": "unfaithful",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Faithful",
+            "background": "An evaluator defending that the candidate output is grounded in the source.",
+            "personality": "Careful, source-anchored, and consistency-seeking.",
+            "stance": "Argue that the output is faithful and consistent with the source."
+          }
+        ]
+      },
+      {
+        "key": "unfaithful",
+        "label": "Unfaithful",
+        "description": "Argues that a summary/answer is unfaithful to its source (summary-evaluation pair).",
+        "pair_with": "faithful",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Unfaithful",
+            "background": "An evaluator hunting for hallucinations and unsupported claims.",
+            "personality": "Suspicious, detail-oriented, and intolerant of unsupported content.",
+            "stance": "Argue that the output is unfaithful or contains unsupported content."
+          }
+        ]
+      },
+      {
+        "key": "proponent",
+        "label": "Proponent",
+        "description": "Supports the retrieved/claimed answer (retrieval-debate pair).",
+        "pair_with": "challenger",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Proponent",
+            "background": "An agent that defends the retrieved evidence and the answer it supports.",
+            "personality": "Confident and grounded in the retrieved passages.",
+            "stance": "Argue that the retrieved evidence supports the proposed answer."
+          }
+        ]
+      },
+      {
+        "key": "challenger",
+        "label": "Challenger",
+        "description": "Challenges the retrieved/claimed answer (retrieval-debate pair).",
+        "pair_with": "proponent",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Challenger",
+            "background": "An agent that questions the retrieval and probes for contradicting evidence.",
+            "personality": "Inquisitive and willing to reject weakly supported answers.",
+            "stance": "Argue that the retrieved evidence is insufficient or contradicts the answer."
+          }
+        ]
+      },
+      {
+        "key": "gold",
+        "label": "Gold answer advocate",
+        "description": "Argues for the correct answer (gold/distractor pair for QA debates).",
+        "pair_with": "distractor",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Gold",
+            "background": "An agent committed to defending the correct answer with sound reasoning.",
+            "personality": "Rigorous, precise, and grounded in the question's constraints.",
+            "stance": "Argue that the correct (gold) option is the right answer."
+          }
+        ]
+      },
+      {
+        "key": "distractor",
+        "label": "Distractor advocate",
+        "description": "Argues for the strongest incorrect option (gold/distractor pair for QA debates).",
+        "pair_with": "gold",
+        "is_set": false,
+        "personas": [
+          {
+            "name": "Distractor",
+            "background": "An agent that mounts the most convincing case for a plausible wrong option.",
+            "personality": "Persuasive and good at exploiting ambiguity.",
+            "stance": "Argue that the strongest distractor option is the right answer."
+          }
+        ]
+      },
+      {
+        "key": "six_thinking_hats",
+        "label": "Six Thinking Hats",
+        "description": "Edward de Bono's six thinking modes modelled as six distinct personalities.",
+        "pair_with": null,
+        "is_set": true,
+        "personas": [
+          {
+            "name": "White Hat",
+            "background": "The information gatherer focused on data and known facts.",
+            "personality": "Neutral and objective; reports facts without interpretation.",
+            "stance": "Contribute only facts, figures, and information gaps."
+          },
+          {
+            "name": "Red Hat",
+            "background": "The voice of intuition and emotion.",
+            "personality": "Expresses feelings and hunches without needing to justify them.",
+            "stance": "Contribute emotional and intuitive reactions to the proposal."
+          },
+          {
+            "name": "Black Hat",
+            "background": "The cautious critic assessing risks.",
+            "personality": "Careful and judgemental; identifies difficulties and dangers.",
+            "stance": "Contribute risks, weaknesses, and reasons something may fail."
+          },
+          {
+            "name": "Yellow Hat",
+            "background": "The optimist assessing value and benefits.",
+            "personality": "Positive and constructive; seeks feasibility and upside.",
+            "stance": "Contribute benefits, value, and reasons something may succeed."
+          },
+          {
+            "name": "Green Hat",
+            "background": "The creative generator of alternatives.",
+            "personality": "Inventive and lateral; proposes new ideas and options.",
+            "stance": "Contribute creative alternatives and novel possibilities."
+          },
+          {
+            "name": "Blue Hat",
+            "background": "The process manager organising the thinking.",
+            "personality": "Reflective and organising; directs the discussion.",
+            "stance": "Contribute structure, summaries, and next-step direction."
+          }
+        ]
+      },
+      {
+        "key": "domain_expert_panel",
+        "label": "Domain expert panel",
+        "description": "A set of differentiated domain-expert backgrounds for a cross-disciplinary panel.",
+        "pair_with": null,
+        "is_set": true,
+        "personas": [
+          {
+            "name": "Software Engineer",
+            "background": "A senior software engineer with deep systems and architecture experience.",
+            "personality": "Pragmatic and implementation-focused.",
+            "stance": "Evaluate from a technical feasibility and engineering-cost perspective."
+          },
+          {
+            "name": "Domain Scientist",
+            "background": "A subject-matter scientist grounded in the relevant research literature.",
+            "personality": "Evidence-driven and methodical.",
+            "stance": "Evaluate from a scientific validity and evidence perspective."
+          },
+          {
+            "name": "Product Strategist",
+            "background": "A product strategist focused on users, market fit, and outcomes.",
+            "personality": "User-centric and outcome-oriented.",
+            "stance": "Evaluate from a user-value and strategic-fit perspective."
+          },
+          {
+            "name": "Ethicist",
+            "background": "An ethicist assessing fairness, safety, and societal impact.",
+            "personality": "Principled and risk-aware.",
+            "stance": "Evaluate from an ethical, fairness, and safety perspective."
+          }
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "key": "debater",
+        "label": "Debater",
+        "description": "Presents and defends positions, engaging in the exchange to reach consensus.",
+        "icon": "role/debater"
+      },
+      {
+        "key": "judge",
+        "label": "Judge",
+        "description": "Delivers the final decision and may determine when consensus is reached.",
+        "icon": "role/judge"
+      },
+      {
+        "key": "summarizer",
+        "label": "Summarizer",
+        "description": "Synthesizes debaters' statements to reduce token consumption.",
+        "icon": "role/summarizer"
+      },
+      {
+        "key": "leader",
+        "label": "Leader",
+        "description": "Oversees and guides the debate (also called moderator).",
+        "icon": "role/leader"
+      },
+      {
+        "key": "verifier",
+        "label": "Verifier",
+        "description": "Fact-checks the statements produced by debaters.",
+        "icon": "role/verifier"
+      },
+      {
+        "key": "editor",
+        "label": "Editor",
+        "description": "Refines and produces the final response from the debate outcome.",
+        "icon": "role/editor"
+      }
+    ],
+    "topologies": [
+      {
+        "key": "chain",
+        "label": "Chain",
+        "description": "A linear topology where each agent builds on its predecessor.",
+        "icon": "topology/chain"
+      },
+      {
+        "key": "ring",
+        "label": "Ring",
+        "description": "A cyclic chain where each agent communicates with a fixed neighbour set.",
+        "icon": "topology/ring"
+      },
+      {
+        "key": "star",
+        "label": "Star",
+        "description": "A centralized topology where a single node aggregates from all others.",
+        "icon": "topology/star"
+      },
+      {
+        "key": "tree",
+        "label": "Tree",
+        "description": "A hierarchical topology enabling recursive decomposition of reasoning.",
+        "icon": "topology/tree"
+      },
+      {
+        "key": "layered",
+        "label": "Layered network",
+        "description": "A multi-stage topology where agents form sequential layers, each performing a distinct transformation.",
+        "icon": "topology/layered"
+      },
+      {
+        "key": "sparse",
+        "label": "Sparse",
+        "description": "Each agent interacts with a limited subset of peers (|E| << |V|(|V|-1)).",
+        "icon": "topology/sparse"
+      },
+      {
+        "key": "bipartite",
+        "label": "Bipartite",
+        "description": "Agents split into two disjoint sets interacting primarily across the partition.",
+        "icon": "topology/bipartite"
+      }
+    ]
+  },
+  "defaults": {
+    "participants": {
+      "persona_heterogeneity": "homogeneous",
+      "persona_assignment": "unspecified",
+      "base_model_family": "closed_weight",
+      "base_model_heterogeneity": "homogeneous"
+    },
+    "interaction": {
+      "topology_adaptability": "static",
+      "topology_structure": "fully_connected",
+      "protocol_mechanism": "sequential",
+      "protocol_ordering": "fixed",
+      "format_syntax": "natural_language",
+      "format_content": "verbatim",
+      "format_memory": "short_term"
+    },
+    "agreement": {
+      "authority": "collective",
+      "resolution": "majority_vote"
+    }
+  },
+  "under_development": [
+    "automatic",
+    "dynamic",
+    "coordinator",
+    "embeddings",
+    "other",
+    "long_term",
+    "knowledge_retrieval",
+    "parametric"
+  ]
+}

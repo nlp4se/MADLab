@@ -1,0 +1,65 @@
+---
+/**
+ * Renders a shared role/topology SVG inline.
+ *
+ * Icons live in the single shared source `shared/icons/{role,topology}/*.svg`
+ * (the same assets the frontend consumes via its `@icons` alias). They are
+ * imported here as raw strings at build time with Vite's glob import and
+ * inlined so they inherit `currentColor` and can be themed per dimension — no
+ * SVGs are duplicated into the website tree (Req 13.4 groundwork).
+ *
+ * The icon gallery itself is task 9.3; this component establishes the shared
+ * consumption mechanism.
+ */
+interface Props {
+  /** "role" or "topology". */
+  kind: "role" | "topology";
+  /** File name without extension, e.g. "debater" or "chain". */
+  name: string;
+  /** Pixel size (width == height); defaults to 24. */
+  size?: number;
+  class?: string;
+}
+
+const { kind, name, size = 24, class: className } = Astro.props;
+
+// Eagerly import every shared SVG as a raw string so lookups are synchronous.
+const svgs = import.meta.glob<string>("@icons/**/*.svg", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+// Vite resolves the alias to an absolute path; match on the trailing segment.
+const suffix = `/shared/icons/${kind}/${name}.svg`;
+const entry = Object.entries(svgs).find(([p]) => p.replace(/\\/g, "/").endsWith(suffix));
+let markup = entry?.[1] ?? "";
+
+if (markup) {
+  // Normalize the rendered size while keeping the authored viewBox intact.
+  markup = markup.replace(
+    /<svg\b/,
+    `<svg width="${size}" height="${size}"${className ? ` class="${className}"` : ""}`,
+  );
+}
+---
+
+{markup ? (
+  <Fragment set:html={markup} />
+) : (
+  <span class="icon-missing" title={`Missing icon: ${kind}/${name}`} aria-hidden="true">?</span>
+)}
+
+<style>
+  .icon-missing {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5em;
+    height: 1.5em;
+    border: 1px dashed hsl(var(--border));
+    border-radius: 4px;
+    color: hsl(var(--muted-fg));
+    font-size: 0.75rem;
+  }
+</style>

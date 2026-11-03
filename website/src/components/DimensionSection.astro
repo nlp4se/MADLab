@@ -1,0 +1,193 @@
+---
+/**
+ * One colour-themed taxonomy dimension section (task 9.2, Reqs 13.3, 13.5).
+ *
+ * Renders a dimension's sub-dimensions and their values from the committed
+ * taxonomy snapshot. The whole section is tagged with `data-dimension` so the
+ * shared colour tokens theme it (Participants = indigo, Interaction = teal,
+ * Agreement = amber), keeping the docs consistent with the frontend.
+ *
+ * - Each value uses its shared label + description from the catalog.
+ * - Values that carry an icon ref (e.g. `role/debater`, `topology/chain`) are
+ *   rendered with the shared <Icon /> component.
+ * - Non-executable values get a visible "Under development" marker.
+ */
+import type { Dimension, TaxonomyValue } from "../data/taxonomy";
+import Icon from "./Icon.astro";
+
+interface Props {
+  dimension: Dimension;
+}
+
+const { dimension } = Astro.props;
+
+/** Split an icon ref like "role/debater" into a kind + name for <Icon />. */
+function parseIcon(icon: string | null): { kind: "role" | "topology"; name: string } | null {
+  if (!icon) return null;
+  const [kind, name] = icon.split("/");
+  if ((kind === "role" || kind === "topology") && name) {
+    return { kind, name };
+  }
+  return null;
+}
+
+function valueId(dimKey: string, subKey: string, value: TaxonomyValue): string {
+  return `${dimKey}-${subKey}-${value.key}`;
+}
+---
+
+<section class="dimension" data-dimension={dimension.key} aria-labelledby={`dim-${dimension.key}`}>
+  <header class="dimension__header">
+    <h2 id={`dim-${dimension.key}`}>{dimension.label}</h2>
+    <p>{dimension.description}</p>
+  </header>
+
+  <div class="subdimensions">
+    {dimension.subdimensions.map((sub) => (
+      <article class="subdimension">
+        <div class="subdimension__head">
+          <h3>{sub.label}</h3>
+          <span class="selection" title={`Selection: ${sub.selection}`}>{sub.selection}</span>
+        </div>
+        <p class="subdimension__desc">{sub.description}</p>
+
+        <ul class="values">
+          {sub.values.map((value) => {
+            const icon = parseIcon(value.icon);
+            return (
+              <li class="value" id={valueId(dimension.key, sub.key, value)}>
+                <div class="value__head">
+                  {icon && (
+                    <span class="value__icon" aria-hidden="true">
+                      <Icon kind={icon.kind} name={icon.name} size={22} />
+                    </span>
+                  )}
+                  <span class="value__label">{value.label}</span>
+                  {value.default && <span class="badge badge--default">Default</span>}
+                  {!value.executable && (
+                    <span class="badge badge--dev">Under development</span>
+                  )}
+                </div>
+                <p class="value__desc">{value.description}</p>
+              </li>
+            );
+          })}
+        </ul>
+      </article>
+    ))}
+  </div>
+</section>
+
+<style>
+  .dimension {
+    margin-bottom: 3.5rem;
+    scroll-margin-top: 4rem;
+  }
+  .dimension__header {
+    border-left: 4px solid hsl(var(--accent));
+    padding: 0.75rem 0 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .dimension__header h2 {
+    margin: 0 0 0.35rem;
+    color: hsl(var(--accent));
+    font-size: 1.6rem;
+  }
+  .dimension__header p {
+    margin: 0;
+    color: hsl(var(--muted-fg));
+    max-width: 48rem;
+  }
+
+  .subdimensions {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  }
+  .subdimension {
+    border: 1px solid hsl(var(--border));
+    border-top: 3px solid hsl(var(--accent));
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem 1.25rem;
+    background: hsl(var(--card));
+  }
+  .subdimension__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .subdimension__head h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .selection {
+    flex: none;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: hsl(var(--accent));
+    background: hsl(var(--accent-muted));
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+  }
+  .subdimension__desc {
+    margin: 0.4rem 0 1rem;
+    color: hsl(var(--muted-fg));
+    font-size: 0.9rem;
+  }
+
+  .values {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+  .value {
+    scroll-margin-top: 4rem;
+  }
+  .value__head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .value__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--accent));
+  }
+  .value__label {
+    font-weight: 600;
+    color: hsl(var(--fg));
+  }
+  .value__desc {
+    margin: 0.2rem 0 0;
+    color: hsl(var(--muted-fg));
+    font-size: 0.9rem;
+  }
+
+  .badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    line-height: 1.4;
+  }
+  .badge--default {
+    color: hsl(var(--accent));
+    background: hsl(var(--accent-muted));
+    border: 1px solid hsl(var(--accent) / 0.3);
+  }
+  .badge--dev {
+    color: hsl(26 83% 24%);
+    background: hsl(38 92% 90%);
+    border: 1px solid hsl(38 92% 70%);
+  }
+</style>

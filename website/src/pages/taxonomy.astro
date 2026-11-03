@@ -1,0 +1,92 @@
+---
+/**
+ * Taxonomy page (task 9.2, Reqs 13.3, 13.5).
+ *
+ * Documents each of the three MAD dimensions with their sub-dimensions and
+ * possible values, driven entirely by the committed taxonomy snapshot
+ * (`src/data/taxonomy.ts`) — no backend calls at runtime (Req 13.1).
+ *
+ * Each dimension is rendered as a colour-themed section (Participants = indigo,
+ * Interaction = teal, Agreement = amber) via <DimensionSection />, which tags
+ * its root with `data-dimension` so the shared colour tokens theme it and the
+ * three dimensions stay visually distinct and consistent with the frontend.
+ */
+import BaseLayout from "../layouts/BaseLayout.astro";
+import DimensionSection from "../components/DimensionSection.astro";
+import { DIMENSION_KEYS, getDimension } from "../data/taxonomy";
+
+const dimensions = DIMENSION_KEYS.map(getDimension).filter(
+  (d): d is NonNullable<typeof d> => d != null,
+);
+---
+
+<BaseLayout
+  title="Taxonomy — MAD Documentation"
+  description="The three MAD taxonomy dimensions with their sub-dimensions and values."
+>
+  <section class="intro">
+    <h1>The MAD taxonomy</h1>
+    <p class="lede">
+      Every MAD configuration is an instantiation of three orthogonal
+      dimensions. Each dimension below lists its sub-dimensions and the possible
+      values, with the shared labels, descriptions, and icons used across the
+      platform. Values marked <span class="dev-inline">Under development</span>
+      are fully configurable and savable but not yet executable by the engine.
+    </p>
+    <nav class="dim-jump" aria-label="Jump to dimension">
+      {dimensions.map((dim) => (
+        <a href={`#dim-${dim.key}`} data-dimension={dim.key}>{dim.label}</a>
+      ))}
+    </nav>
+  </section>
+
+  {dimensions.map((dim) => <DimensionSection dimension={dim} />)}
+
+  <style>
+    .intro {
+      margin-bottom: 2.5rem;
+    }
+    .intro h1 {
+      font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+      margin: 0 0 0.5rem;
+    }
+    .lede {
+      max-width: 48rem;
+      color: hsl(var(--muted-fg));
+      font-size: 1.05rem;
+    }
+    .dev-inline {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.05rem 0.4rem;
+      border-radius: 999px;
+      color: hsl(26 83% 24%);
+      background: hsl(38 92% 90%);
+      border: 1px solid hsl(38 92% 70%);
+      vertical-align: middle;
+    }
+    .dim-jump {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 1.5rem;
+    }
+    .dim-jump a {
+      border: 1px solid hsl(var(--accent));
+      color: hsl(var(--accent));
+      background: hsl(var(--accent-muted));
+      border-radius: 999px;
+      padding: 0.3rem 0.9rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .dim-jump a:hover {
+      text-decoration: none;
+      color: hsl(var(--accent-foreground));
+      background: hsl(var(--accent));
+    }
+  </style>
+</BaseLayout>

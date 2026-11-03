@@ -1,0 +1,102 @@
+---
+/**
+ * Base layout for every page of the documentation site.
+ *
+ * Provides the shared <head>, the global design tokens (including the three
+ * dimension colours), a simple header/nav and footer. Page content is injected
+ * through the default <slot />.
+ */
+import "../styles/tokens.css";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Documentation for the Multi-Agent Debate (MAD) taxonomy platform." } =
+  Astro.props;
+
+const nav = [
+  { href: "/", label: "Home" },
+  { href: "/taxonomy", label: "Taxonomy" },
+  { href: "/patterns", label: "Patterns" },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container site-header__inner">
+        <a class="brand" href="/">MAD Taxonomy</a>
+        <nav class="site-nav">
+          {nav.map((item) => <a href={item.href}>{item.label}</a>)}
+        </nav>
+      </div>
+    </header>
+
+    <main class="container site-main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>
+          Static documentation for the Multi-Agent Debate (MAD) taxonomy
+          platform. Built independently of the backend and frontend.
+        </p>
+      </div>
+    </footer>
+
+    <style>
+      .site-header {
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+      }
+      .site-header__inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 3.5rem;
+      }
+      .brand {
+        font-weight: 700;
+        color: hsl(var(--fg));
+        font-size: 1.05rem;
+      }
+      .brand:hover {
+        text-decoration: none;
+      }
+      .site-nav {
+        display: flex;
+        gap: 1.25rem;
+      }
+      .site-nav a {
+        color: hsl(var(--muted-fg));
+        font-weight: 500;
+      }
+      .site-nav a:hover {
+        color: hsl(var(--fg));
+        text-decoration: none;
+      }
+      .site-main {
+        padding-block: 2.5rem 4rem;
+        min-height: 60vh;
+      }
+      .site-footer {
+        border-top: 1px solid hsl(var(--border));
+        padding-block: 1.5rem;
+        color: hsl(var(--muted-fg));
+        font-size: 0.875rem;
+      }
+    </style>
+  </body>
+</html>

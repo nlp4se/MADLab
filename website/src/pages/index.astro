@@ -1,0 +1,246 @@
+---
+/**
+ * Home / overview page (task 9.2, Req 13.2).
+ *
+ * Summarizes the MAD taxonomy webapp platform and links to BOTH papers the
+ * project is grounded in. The papers are served statically from
+ * `public/papers/` (copied from the repo's `paper/` directory) so the page has
+ * no runtime dependency on the backend (Req 13.1).
+ *
+ * The three-dimension overview is driven by the committed taxonomy snapshot
+ * (`src/data/taxonomy.ts`) and themed per dimension via the shared colour
+ * tokens using `data-dimension` (Reqs 13.3, 13.5).
+ */
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Icon from "../components/Icon.astro";
+import { taxonomy, DIMENSION_KEYS, getDimension } from "../data/taxonomy";
+
+const dimensions = DIMENSION_KEYS.map(getDimension).filter(
+  (d): d is NonNullable<typeof d> => d != null,
+);
+
+const allValues = taxonomy.dimensions
+  .flatMap((d) => d.subdimensions)
+  .flatMap((s) => s.values);
+const valueCount = allValues.length;
+
+// The two papers the platform is grounded in. PDFs are served from
+// public/papers/ (see website/public/papers). Titles/authors transcribed from
+// the sources in the repo's paper/ directory.
+const papers = [
+  {
+    title: "Multi-Agent Debate Strategies: Survey, Taxonomy, and Challenges",
+    venue: "ACM Computing Surveys (CSUR)",
+    authors: "Motger, Oriol, Marco, Franch — Universitat Politècnica de Catalunya",
+    summary:
+      "The systematic survey that derives the three-dimensional MAD taxonomy " +
+      "(Participants, Interaction, Agreement) and the formal notation this " +
+      "platform makes executable.",
+    href: "/papers/MAD_ACM_CSUR.pdf",
+  },
+  {
+    title:
+      "Multi-Agent Debate Strategies to Enhance Requirements Engineering with Large Language Models",
+    venue: "RE@Next'25",
+    authors: "Oriol, Motger, Marco, Franch — Universitat Politècnica de Catalunya",
+    summary:
+      "The proof-of-concept precursor that applies MAD to requirements " +
+      "classification — the gold case this platform reproduces end-to-end.",
+    href: "/papers/RE_next25.pdf",
+  },
+];
+---
+
+<BaseLayout title="MAD Taxonomy — Documentation">
+  <section class="hero">
+    <p class="eyebrow">
+      <Icon kind="role" name="debater" size={28} /> Multi-Agent Debate
+    </p>
+    <h1>The MAD Taxonomy Platform</h1>
+    <p class="lede">
+      A platform for designing, configuring, saving, executing, and analysing
+      <strong>Multi-Agent Debate (MAD)</strong> configurations for scientific
+      purposes. Any debate is treated as a declarative, machine-readable
+      artifact built from a taxonomy of three orthogonal dimensions, so it can
+      be documented, version-controlled, executed across multiple model
+      providers, and compared.
+    </p>
+    <p class="sub">
+      This documentation site explains the taxonomy that drives the platform —
+      {valueCount} catalogued values across three dimensions, rendered from the
+      same catalog the product uses.
+    </p>
+    <div class="cta">
+      <a class="btn btn--primary" href="/taxonomy">Explore the taxonomy</a>
+      <a class="btn" href="/patterns">Patterns gallery</a>
+    </div>
+  </section>
+
+  <section class="dimensions" aria-label="Taxonomy dimensions">
+    {dimensions.map((dim) => (
+      <article class="dim-card" data-dimension={dim.key}>
+        <h2>{dim.label}</h2>
+        <p>{dim.description}</p>
+        <p class="dim-meta">{dim.subdimensions.length} sub-dimensions</p>
+      </article>
+    ))}
+  </section>
+
+  <section class="papers" aria-labelledby="papers-heading">
+    <h2 id="papers-heading">Grounded in the research</h2>
+    <p class="papers-lede">
+      The platform is grounded in two papers from the Universitat Politècnica de
+      Catalunya. Read them directly below.
+    </p>
+    <div class="paper-grid">
+      {papers.map((paper) => (
+        <article class="paper-card">
+          <p class="paper-venue">{paper.venue}</p>
+          <h3>
+            <a href={paper.href} rel="noopener">{paper.title}</a>
+          </h3>
+          <p class="paper-authors">{paper.authors}</p>
+          <p class="paper-summary">{paper.summary}</p>
+          <a class="paper-link" href={paper.href} rel="noopener">
+            Read the PDF →
+          </a>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <style>
+    .hero {
+      padding-block: 1rem 2.5rem;
+      border-bottom: 1px solid hsl(var(--border));
+      margin-bottom: 2.5rem;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: hsl(var(--interaction));
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.8rem;
+    }
+    h1 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      margin: 0.25rem 0 0.75rem;
+    }
+    .lede {
+      max-width: 44rem;
+      color: hsl(var(--fg));
+      font-size: 1.15rem;
+    }
+    .sub {
+      max-width: 44rem;
+      color: hsl(var(--muted-fg));
+      font-size: 1rem;
+    }
+    .cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      padding: 0.55rem 1.1rem;
+      font-weight: 600;
+      color: hsl(var(--fg));
+    }
+    .btn:hover {
+      text-decoration: none;
+      border-color: hsl(var(--interaction));
+    }
+    .btn--primary {
+      background: hsl(var(--interaction));
+      border-color: hsl(var(--interaction));
+      color: hsl(var(--interaction-foreground));
+    }
+    .btn--primary:hover {
+      opacity: 0.92;
+    }
+
+    .dimensions {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+      margin-bottom: 3rem;
+    }
+    .dim-card {
+      border: 1px solid hsl(var(--border));
+      border-left: 4px solid hsl(var(--accent));
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      background: hsl(var(--accent-muted));
+    }
+    .dim-card h2 {
+      margin: 0 0 0.5rem;
+      color: hsl(var(--accent));
+    }
+    .dim-card p {
+      margin: 0;
+      color: hsl(var(--fg));
+    }
+    .dim-meta {
+      margin-top: 0.75rem !important;
+      font-size: 0.85rem;
+      color: hsl(var(--muted-fg)) !important;
+    }
+
+    .papers {
+      border-top: 1px solid hsl(var(--border));
+      padding-top: 2rem;
+    }
+    .papers h2 {
+      margin: 0 0 0.25rem;
+    }
+    .papers-lede {
+      color: hsl(var(--muted-fg));
+      margin: 0 0 1.5rem;
+      max-width: 44rem;
+    }
+    .paper-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    }
+    .paper-card {
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      background: hsl(var(--card));
+    }
+    .paper-venue {
+      margin: 0 0 0.4rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: hsl(var(--interaction));
+    }
+    .paper-card h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1.05rem;
+      line-height: 1.35;
+    }
+    .paper-authors {
+      margin: 0 0 0.75rem;
+      font-size: 0.85rem;
+      color: hsl(var(--muted-fg));
+    }
+    .paper-summary {
+      margin: 0 0 1rem;
+      color: hsl(var(--fg));
+    }
+    .paper-link {
+      font-weight: 600;
+    }
+  </style>
+</BaseLayout>

@@ -1,0 +1,86 @@
+/*
+ * Global design tokens for the documentation website.
+ *
+ * The three MAD taxonomy dimensions each have a signature colour, kept in sync
+ * with the frontend (see frontend/src/index.css) so the docs and the app read
+ * as one product (Reqs 13.3, 13.5):
+ *
+ *   Participants = indigo   Interaction = teal   Agreement = amber
+ *
+ * Colours are stored as HSL channel triplets (matching the frontend's shadcn
+ * token convention) so they can be composed with hsl()/alpha. The themed
+ * Taxonomy sections (task 9.2) consume these tokens.
+ */
+:root {
+  --bg: 0 0% 100%;
+  --fg: 222 47% 11%;
+  --muted-fg: 215 16% 47%;
+  --border: 214 32% 91%;
+  --card: 0 0% 100%;
+  --radius: 0.5rem;
+  --maxw: 72rem;
+
+  /* Dimension theming tokens. */
+  --participants: 243 75% 59%; /* indigo-600 */
+  --participants-foreground: 0 0% 100%;
+  --participants-muted: 243 75% 95%;
+
+  --interaction: 173 80% 36%; /* teal-600 */
+  --interaction-foreground: 0 0% 100%;
+  --interaction-muted: 173 80% 94%;
+
+  --agreement: 38 92% 50%; /* amber-500 */
+  --agreement-foreground: 26 83% 14%;
+  --agreement-muted: 38 92% 94%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  line-height: 1.6;
+  color: hsl(var(--fg));
+  background: hsl(var(--bg));
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: hsl(var(--interaction));
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
+/* Convenience modifiers so themed sections can pick a dimension by name. */
+[data-dimension="participants"] {
+  --accent: var(--participants);
+  --accent-foreground: var(--participants-foreground);
+  --accent-muted: var(--participants-muted);
+}
+[data-dimension="interaction"] {
+  --accent: var(--interaction);
+  --accent-foreground: var(--interaction-foreground);
+  --accent-muted: var(--interaction-muted);
+}
+[data-dimension="agreement"] {
+  --accent: var(--agreement);
+  --accent-foreground: var(--agreement-foreground);
+  --accent-muted: var(--agreement-muted);
+}
