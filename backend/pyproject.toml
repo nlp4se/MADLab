@@ -19,6 +19,9 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    # Multipart form parsing for CSV dataset uploads (app/routers/datasets.py)
+    "python-multipart>=0.0.9",
     # Persistence (app/db/)
     "sqlalchemy>=2.0",
     # Multi-provider model execution (mad/providers/)

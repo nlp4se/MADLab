@@ -1,28 +1,14 @@
-"""CLI entry point.
+"""CLI entry point for the headless ``mad`` console script.
 
-Full commands (create config, run over CSV, evaluate) are implemented in task
-6.7. For now this provides a working ``mad`` entry point that reports the
-version, so the console script declared in pyproject.toml resolves.
+Delegates to :func:`cli.app.main`, which implements the full command set
+(create-config, run, classify, evaluate) over the same services/engine the
+FastAPI web layer uses — the headless research path (Req 12.4, 12.5). The
+``version`` command is preserved from the original stub.
 """
 
 from __future__ import annotations
 
-import sys
-
-from mad import __version__ as mad_version
-
-
-def main(argv: list[str] | None = None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] in {"-V", "--version", "version"}:
-        print(f"mad {mad_version}")
-        return 0
-    print(
-        f"mad {mad_version} — CLI commands are not implemented yet (see task 6.7).",
-        file=sys.stderr,
-    )
-    return 0
-
+from cli.app import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
