@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mad-backend"
+version = "0.1.0"
+description = "Headless Multi-Agent Debate (MAD) engine + FastAPI API for the MAD webapp platform"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "See repository LICENSE" }
+authors = [{ name = "llm-discussion" }]
+
+# Runtime dependencies for the backend engine + web layer.
+# Version floors are intentionally loose (>=) to ease install across environments;
+# the top-level ../requirements.txt pins the *research* code in code/ and is left untouched.
+dependencies = [
+    # Web layer (app/)
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    # Persistence (app/db/)
+    "sqlalchemy>=2.0",
+    # Multi-provider model execution (mad/providers/)
+    "litellm>=1.40",
+    # Credential encryption (app/security/)
+    "cryptography>=42.0",
+    # Input binding + evaluation (mad/input/, mad/evaluation/)
+    "pandas>=2.0",
+    # Config / secrets loading
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Dependencies needed to port the existing evaluation/baseline research code
+# (code/evaluation/*) into mad/evaluation/ in later tasks (4.3).
+evaluation = [
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "matplotlib>=3.5",
+    "seaborn>=0.13",
+    "openpyxl>=3.1",
+]
+# Developer / test tooling.
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+mad = "cli.__main__:main"
+
+[tool.setuptools]
+packages = [
+    "mad",
+    "mad.taxonomy",
+    "mad.engine",
+    "mad.providers",
+    "mad.input",
+    "mad.evaluation",
+    "app",
+    "app.routers",
+    "app.schemas",
+    "app.services",
+    "app.db",
+    "app.security",
+    "app.jobs",
+    "cli",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
