@@ -24,6 +24,14 @@ class UnderDevelopment(MADError):
     """
 
 
+class TemplateError(MADError):
+    """Raised when an input template cannot be resolved against an instance.
+
+    Typically carries the names of placeholders that have no corresponding
+    field in the instance (or in the available-field set during validation).
+    """
+
+
 class ProviderError(MADError):
     """Raised for model-provider resolution, connectivity, or invocation failures."""
 
