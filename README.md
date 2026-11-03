@@ -1,4 +1,4 @@
-# 🧠 Multi-Agent Debate Strategies to Enhance Requirements Engineering with Large Language Models
+﻿# 🧠 Multi-Agent Debate Strategies to Enhance Requirements Engineering with Large Language Models
 
 This repository is a research-focused project for creating AI assistants based on Large Language Models (LLMs) that engage in structured discussions to improve the performance of requirements engineering tasks, such as requirements classification.
 
@@ -30,7 +30,7 @@ The platform is delivered as three cleanly separated, independently deployable c
 ## 🚀 Project Structure
 
 ```
-llm-discussion/
+MADLab/
 │
 ├── backend/            # FastAPI REST API + headless MAD engine + `mad` CLI (Python)
 ├── frontend/           # React + TypeScript management webapp
@@ -195,8 +195,8 @@ This prints the per-instance F/NF predictions and the aggregate accuracy. See
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/nlp4se/llm-discussion.git
-   cd llm-discussion
+   git clone https://github.com/nlp4se/MADLab.git
+   cd MADLab
    ```
 
 2. **Add your API keys in a `.env` file**
