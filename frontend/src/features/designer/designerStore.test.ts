@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { edgeId, useDesignerStore } from "./designerStore";
-import { toFlowEdges, toFlowNodes } from "./flowGraph";
+import { edgeId, useDesignerStore, withUiLayout } from "./designerStore";
+import { toFlowEdges, toFlowNodes, toStartEndEdges } from "./flowGraph";
+import { autoLayout } from "./layout";
 
 /* ------------------------------- fixtures -------------------------------- */
 
@@ -315,5 +316,170 @@ describe("designer store — canvas<->artifact sync (Req 6.8)", () => {
       (n) => n.id === "judge",
     )!;
     expect(judgeNode.data.label).toBe("Presiding judge");
+  });
+});
+
+/* ------------- edge bends + persisted layout (task 11.4) ------------- */
+
+describe("designer store — edge bends", () => {
+  beforeEach(loadFixture);
+
+  it("setEdgeBend / resetEdgeBend store and clear a bend, marking dirty", () => {
+    current().setEdgeBend("functional->judge", { x: 12, y: -30 });
+    expect(current().edgeBends["functional->judge"]).toEqual({ x: 12, y: -30 });
+    expect(current().dirty).toBe(true);
+    // The projection hands the bend to the floating edge.
+    const e = toFlowEdges(current().artifact!, null, current().edgeBends);
+    expect(e.find((x) => x.id === "functional->judge")!.data!.bend).toEqual({
+      x: 12,
+      y: -30,
+    });
+
+    current().markSaved();
+    current().resetEdgeBend("functional->judge");
+    expect(current().edgeBends["functional->judge"]).toBeUndefined();
+    expect(current().dirty).toBe(true);
+  });
+
+  it("Start/End connectors are bendable too", () => {
+    current().setEdgeBend("__start__->functional", { x: 0, y: 40 });
+    const conn = toStartEndEdges(current().artifact!, null, current().edgeBends);
+    expect(conn.find((x) => x.id === "__start__->functional")!.data!.bend).toEqual({
+      x: 0,
+      y: 40,
+    });
+  });
+
+  it("drops bends of edges that no longer exist (removeEdge / removeNode / connectors)", () => {
+    const s = current();
+    s.setEdgeBend("functional->judge", { x: 1, y: 1 });
+    s.setEdgeBend("non-functional->judge", { x: 2, y: 2 });
+    s.setEdgeBend("__start__->functional", { x: 3, y: 3 });
+    s.setEdgeBend("__start__->non-functional", { x: 4, y: 4 });
+
+    current().removeEdge("functional->judge");
+    expect(Object.keys(current().edgeBends).sort()).toEqual([
+      "__start__->functional",
+      "__start__->non-functional",
+      "non-functional->judge",
+    ]);
+
+    current().deleteCanvasEdge("__start__->functional");
+    expect(current().edgeBends["__start__->functional"]).toBeUndefined();
+
+    current().removeNode("non-functional");
+    expect(current().edgeBends).toEqual({});
+  });
+
+  it("applyTopology keeps bends only for edges that survive; relayout clears all", () => {
+    current().setEdgeBend("functional->judge", { x: 1, y: 1 });
+    current().setEdgeBend("__start__->functional", { x: 5, y: 5 });
+    // Chain over [functional, non-functional, judge] => functional->non-functional,
+    // non-functional->judge: the old functional->judge edge is gone.
+    current().applyTopology("chain");
+    expect(current().edgeBends).toEqual({ "__start__->functional": { x: 5, y: 5 } });
+
+    current().setEdgeBend("non-functional->judge", { x: 9, y: 9 });
+    current().relayout();
+    expect(current().edgeBends).toEqual({});
+  });
+
+  it("flags reciprocal pairs so they render as two separated curves", () => {
+    current().connectNodes("judge", "functional");
+    const edges = toFlowEdges(current().artifact!, null);
+    const byId = Object.fromEntries(edges.map((e) => [e.id, e]));
+    expect(byId["functional->judge"].data!.reciprocal).toBe(true);
+    expect(byId["judge->functional"].data!.reciprocal).toBe(true);
+    expect(byId["non-functional->judge"].data!.reciprocal).toBe(false);
+  });
+});
+
+describe("designer store — persisted layout (artifact.ui)", () => {
+  const withUi = (ui: unknown) => ({ ...makeArtifact(), ui });
+
+  it("loadArtifact seeds positions and bends from ui, auto-placing only the rest", () => {
+    useDesignerStore.getState().loadArtifact(
+      7,
+      withUi({
+        nodes: {
+          functional: { x: 11, y: 22 },
+          __start__: { x: -300, y: 5 },
+          ghost: { x: 1, y: 1 }, // stale key -> ignored
+        },
+        edges: {
+          "functional->judge": { x: 0, y: 25 },
+          "ghost->judge": { x: 1, y: 1 }, // stale -> ignored
+        },
+      }),
+    );
+    const s = current();
+    const auto = autoLayout(["functional", "non-functional", "judge"]);
+    expect(s.layout.functional).toEqual({ x: 11, y: 22 });
+    expect(s.layout["non-functional"]).toEqual(auto["non-functional"]);
+    expect(s.layout.judge).toEqual(auto.judge);
+    expect(s.layout.__start__).toEqual({ x: -300, y: 5 });
+    // End has no stored position -> canvas falls back to its computed default.
+    expect(s.layout.__end__).toBeUndefined();
+    expect(s.layout.ghost).toBeUndefined();
+    expect(s.edgeBends).toEqual({ "functional->judge": { x: 0, y: 25 } });
+    expect(s.dirty).toBe(false);
+  });
+
+  it("loadArtifact without ui (or ui: null) auto-lays-out as before", () => {
+    useDesignerStore.getState().loadArtifact(7, withUi(null));
+    expect(current().layout).toEqual(autoLayout(["functional", "non-functional", "judge"]));
+    expect(current().edgeBends).toEqual({});
+  });
+
+  it("withUiLayout (used by Save) writes the current layout + bends for existing ids only", () => {
+    current().moveNode("judge", { x: 500, y: 600 });
+    current().moveNode("__end__", { x: 900, y: 10 });
+    current().setEdgeBend("functional->judge", { x: 3, y: -4 });
+    // A stale entry sneaking into the maps must not be persisted.
+    useDesignerStore.setState({
+      layout: { ...current().layout, ghost: { x: 0, y: 0 } },
+      edgeBends: { ...current().edgeBends, "ghost->judge": { x: 1, y: 1 } },
+    });
+
+    const s = current();
+    const saved = withUiLayout(s.artifact!, s.layout, s.edgeBends);
+    expect(Object.keys(saved.ui!.nodes!).sort()).toEqual(
+      ["__end__", "functional", "judge", "non-functional"].sort(),
+    );
+    expect(saved.ui!.nodes!.judge).toEqual({ x: 500, y: 600 });
+    expect(saved.ui!.nodes!.__end__).toEqual({ x: 900, y: 10 });
+    expect(saved.ui!.edges).toEqual({ "functional->judge": { x: 3, y: -4 } });
+    // The graph itself is untouched.
+    expect(saved.participants).toEqual(s.artifact!.participants);
+    expect(saved.interaction).toEqual(s.artifact!.interaction);
+
+    // Round trip: reloading the saved artifact restores the same canvas.
+    useDesignerStore.getState().loadArtifact(42, saved as unknown as Record<string, unknown>);
+    expect(current().layout.judge).toEqual({ x: 500, y: 600 });
+    expect(current().layout.__end__).toEqual({ x: 900, y: 10 });
+    expect(current().edgeBends).toEqual({ "functional->judge": { x: 3, y: -4 } });
+  });
+
+  it("an assistant proposal without ui keeps current positions/bends for ids that still exist", () => {
+    current().moveNode("judge", { x: 1, y: 2 });
+    current().setEdgeBend("non-functional->judge", { x: 7, y: 7 });
+    current().setEdgeBend("functional->judge", { x: 8, y: 8 });
+    const proposal = makeArtifact();
+    // Proposal drops the functional->judge edge and adds a new node.
+    proposal.interaction.topology.edges = [
+      { source: "non-functional", target: "judge", directed: true },
+    ];
+    proposal.participants.nodes.push({
+      id: "summarizer",
+      label: "Summarizer",
+      roles: ["summarizer"],
+      base_model: { model_key: "gpt-4o", provider_id: "openai" },
+    });
+    current().setArtifactFromAssistant(proposal);
+    const s = current();
+    expect(s.layout.judge).toEqual({ x: 1, y: 2 });
+    expect(s.layout.summarizer).toBeDefined();
+    expect(s.edgeBends).toEqual({ "non-functional->judge": { x: 7, y: 7 } });
+    expect(s.dirty).toBe(true);
   });
 });

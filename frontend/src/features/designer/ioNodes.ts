@@ -102,3 +102,30 @@ export function parseConnectorId(
   }
   return null;
 }
+
+/** What a canvas connection gesture means for the artifact (task 11.4). */
+export type ResolvedConnection =
+  | { kind: "entry"; nodeId: string }
+  | { kind: "exit"; nodeId: string }
+  | { kind: "edge"; source: string; target: string }
+  | null;
+
+/**
+ * Normalize a drag-to-connect gesture. Handles are direction-agnostic (any side
+ * of a node can start or end a connection), so the drag direction only matters
+ * between two participants (source = drag start, target = drop). Anything
+ * touching Start always means Start -> participant, anything touching End
+ * means participant -> End; Start<->End and self-connections are rejected.
+ */
+export function resolveConnection(source: string, target: string): ResolvedConnection {
+  if (!source || !target || source === target) return null;
+  const ends = new Set([source, target]);
+  if (ends.has(START_NODE_ID) && ends.has(END_NODE_ID)) return null;
+  if (ends.has(START_NODE_ID)) {
+    return { kind: "entry", nodeId: source === START_NODE_ID ? target : source };
+  }
+  if (ends.has(END_NODE_ID)) {
+    return { kind: "exit", nodeId: source === END_NODE_ID ? target : source };
+  }
+  return { kind: "edge", source, target };
+}

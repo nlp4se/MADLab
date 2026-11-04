@@ -1,11 +1,11 @@
 /**
- * UI-only node layout side-channel (task 8.3).
+ * UI-only node layout side-channel (task 8.3, persisted since task 11.4).
  *
- * Node positions are NOT part of the MAD Configuration Artifact schema
- * (`backend/mad/taxonomy/schema.py` has no `x`/`y` on a participant), so storing
- * them in the artifact would break validation. Instead the designer keeps a
- * `LayoutMap` (node id -> {x, y}) in the Zustand store, entirely separate from
- * the artifact that gets persisted via PUT /api/configs/{id}.
+ * Node positions are not part of the participant schema (no `x`/`y` on a
+ * node). While editing, the designer keeps a `LayoutMap` (node id -> {x, y})
+ * in the Zustand store; on Save it is written into the artifact's optional,
+ * presentation-only `ui.nodes` (ignored by the engine), and `loadArtifact`
+ * seeds the map from it via `seedLayout`.
  *
  * `autoLayout` arranges nodes on a circle — deterministic, dependency-free, and
  * good enough for a readable default that the user can then drag around.
@@ -58,6 +58,37 @@ export function reconcileLayout(
   const next: LayoutMap = {};
   for (const id of nodeIds) {
     next[id] = existing[id] ?? generated[id] ?? { ...CENTER };
+  }
+  return next;
+}
+
+/**
+ * Build the layout for `nodeIds` from stored positions (e.g. `artifact.ui.nodes`),
+ * auto-placing ONLY participants without a stored position. `extraIds` (the
+ * Start/End sentinels) are copied when stored and otherwise left out, so the
+ * canvas falls back to their computed default placement. Unknown keys and
+ * malformed points are ignored.
+ */
+export function seedLayout(
+  nodeIds: string[],
+  stored: Record<string, unknown> | null | undefined,
+  extraIds: string[] = [],
+): LayoutMap {
+  const valid = (p: unknown): p is XYPosition =>
+    typeof p === "object" &&
+    p !== null &&
+    Number.isFinite((p as XYPosition).x) &&
+    Number.isFinite((p as XYPosition).y);
+  const src = stored ?? {};
+  const generated = nodeIds.some((id) => !valid(src[id])) ? autoLayout(nodeIds) : {};
+  const next: LayoutMap = {};
+  for (const id of nodeIds) {
+    const p = src[id];
+    next[id] = valid(p) ? { x: p.x, y: p.y } : (generated[id] ?? { ...CENTER });
+  }
+  for (const id of extraIds) {
+    const p = src[id];
+    if (valid(p)) next[id] = { x: p.x, y: p.y };
   }
   return next;
 }

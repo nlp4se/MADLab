@@ -353,6 +353,18 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Frontend-only: built from the stored transcript + config snapshot.
   - Tests: component test for opening the replay, message order/attribution, and playback.
   - _Requirements: 11.2, 13.3_
+
+- [x] 11.4 Floating, bendable edges and a persisted canvas layout
+  - Nodes no longer have fixed left-in / right-out ports: a connection can start or end at any point
+    of a node's border, and edges attach to the node boundary nearest the other end (floating
+    edges). Arrowheads alone convey direction. Reciprocal pairs (A->B and B->A) render as two
+    separated curves so circular exchanges are visible.
+  - Every edge (participant edges and Start/End connectors) has a draggable bend point to reshape
+    it; double-click resets it.
+  - Layout persistence: optional presentation-only `ui` field on MADConfig (node positions incl.
+    Start/End, edge bends), ignored by the engine, saved with the config and kept on export/import.
+  - Tests: geometry helpers, bend/store actions, layout persistence round trip, schema/export.
+  - _Requirements: 4.1, 4.3, 6.1, 6.2, 6.4, 6.8_
 ```
 
 ---

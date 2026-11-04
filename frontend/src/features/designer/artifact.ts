@@ -12,9 +12,9 @@
  * everything else is preserved verbatim so a round-trip through the designer
  * never drops fields it does not understand.
  *
- * Node *positions* are intentionally NOT part of this schema — they are a
- * UI-only layout side-channel (see `layout.ts`) so canvas placement never
- * breaks artifact validation.
+ * While editing, node positions and edge bends live in the store's UI-only
+ * `layout` / `edgeBends` (see `layout.ts`); on Save they are written into the
+ * optional, presentation-only `ui` field so a config reopens with its layout.
  */
 
 export interface PersonaArtifact {
@@ -136,6 +136,24 @@ export interface AgreementArtifact {
   output_schema?: Record<string, unknown> | null;
 }
 
+export interface UiPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Presentation-only canvas layout (task 11.4), mirroring the backend
+ * `UiLayout`. The engine ignores it.
+ *   - `nodes`: node id (incl. the `__start__` / `__end__` sentinels) -> position.
+ *   - `edges`: canvas edge id (`source->target`, `__start__->X`, `X->__end__`)
+ *     -> knob offset from the straight midpoint of the two node centres.
+ * Unknown/stale keys are ignored by the designer.
+ */
+export interface UiLayoutArtifact {
+  nodes?: Record<string, UiPoint>;
+  edges?: Record<string, UiPoint>;
+}
+
 export interface MADArtifact {
   schema_version?: string;
   id?: string;
@@ -145,6 +163,7 @@ export interface MADArtifact {
   interaction: InteractionArtifact;
   agreement?: AgreementArtifact;
   input_spec?: Record<string, unknown>;
+  ui?: UiLayoutArtifact | null;
   // Any additional fields the designer doesn't model are preserved by spreads.
   [key: string]: unknown;
 }

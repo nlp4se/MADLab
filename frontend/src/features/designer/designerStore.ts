@@ -3,8 +3,10 @@
  *
  * This store is the single source of truth while the designer is open. It holds
  * the live `MADArtifact` (V = participants.nodes, E = interaction.topology.edges)
- * plus a UI-only `LayoutMap` of node positions (not part of the artifact schema,
- * see `layout.ts`).
+ * plus a UI-only `LayoutMap` of node positions and `EdgeBendMap` of edge bends
+ * (see `layout.ts` / `edgeGeometry.ts`). Both are seeded from and saved into
+ * the artifact's presentation-only `ui` field (task 11.4), which the engine
+ * ignores.
  *
  * Both directions of the sync flow through here:
  *   - artifact -> canvas: `selectFlowGraph` derives React Flow nodes/edges from
@@ -39,8 +41,26 @@ import {
   exitConnectorId,
   parseConnectorId,
 } from "./ioNodes";
-import { autoLayout, reconcileLayout, type LayoutMap, type XYPosition } from "./layout";
+import {
+  autoLayout,
+  reconcileLayout,
+  seedLayout,
+  type LayoutMap,
+  type XYPosition,
+} from "./layout";
+import { END_NODE_ID, START_NODE_ID } from "./StartEndNodes";
 import { buildTopologyEdges, topologyMeta } from "./topology";
+
+/**
+ * UI-only edge bends (task 11.4): canvas edge id -> offset of the edge's drag
+ * knob from the straight midpoint between its two node centres (see
+ * `edgeGeometry.ts`). Absent = default shape (straight, or the reciprocal-pair
+ * bow). Persisted into `artifact.ui.edges` on Save.
+ */
+export type EdgeBendMap = Record<string, XYPosition>;
+
+/** The synthetic Start/End sentinel ids that may carry a stored position. */
+const SENTINEL_IDS = [START_NODE_ID, END_NODE_ID];
 
 /** A selected canvas element (node or edge), or nothing. */
 export type Selection =
@@ -53,8 +73,13 @@ export interface DesignerState {
   configId: number | null;
   /** The live artifact — the canvas is a projection of this (Req 6.8). */
   artifact: MADArtifact | null;
-  /** UI-only node positions, keyed by node id (not persisted in the artifact). */
+  /**
+   * UI-only node positions, keyed by node id (incl. the Start/End sentinels).
+   * Seeded from `artifact.ui.nodes` on load; written back into `ui` on Save.
+   */
   layout: LayoutMap;
+  /** UI-only edge bends keyed by canvas edge id (see {@link EdgeBendMap}). */
+  edgeBends: EdgeBendMap;
   /** Currently selected node/edge (for the inspector, task 8.4). */
   selection: Selection;
   /** Unsaved-edits flag; set by every mutation, cleared on load/save. */
@@ -104,6 +129,10 @@ export interface DesignerState {
   setValidationErrors: (errors: FieldError[]) => void;
   /** Update a node's canvas position (UI-only layout). */
   moveNode: (id: string, position: XYPosition) => void;
+  /** Set an edge's bend (knob offset from the centres' midpoint); marks dirty. */
+  setEdgeBend: (edgeId: string, offset: XYPosition) => void;
+  /** Reset an edge to its default shape; marks dirty. */
+  resetEdgeBend: (edgeId: string) => void;
   /** Create a directed edge between two existing nodes (no self/dup edges). */
   connectNodes: (source: string, target: string) => void;
   /** Remove a node and every edge incident to it. */
@@ -130,7 +159,7 @@ export interface DesignerState {
   deleteCanvasEdge: (edgeId: string) => void;
   /** Apply a topology template, regenerating E over the current nodes (Req 6.5). */
   applyTopology: (topology: ApplicableTopology) => void;
-  /** Re-run auto-layout over all nodes. */
+  /** Re-run auto-layout over all nodes (also clears every edge bend). */
   relayout: () => void;
   /** Set the current selection. */
   setSelection: (selection: Selection) => void;
@@ -179,6 +208,7 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   configId: null,
   artifact: null,
   layout: {},
+  edgeBends: {},
   selection: null,
   dirty: false,
   validationErrors: [],
@@ -186,10 +216,14 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   loadArtifact: (configId, raw) => {
     const artifact = normalizeArtifact(raw);
     const nodeIds = artifact.participants.nodes.map((n) => n.id);
+    // Seed from the persisted presentation-only layout; only participants
+    // without a stored position are auto-placed (Start/End fall back to their
+    // computed default in the canvas projection).
     set({
       configId,
       artifact,
-      layout: autoLayout(nodeIds),
+      layout: seedLayout(nodeIds, artifact.ui?.nodes, SENTINEL_IDS),
+      edgeBends: pruneBends(artifact, sanitizeBends(artifact.ui?.edges)),
       selection: null,
       dirty: false,
       validationErrors: [],
@@ -200,11 +234,21 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const artifact = normalizeArtifact(raw);
     const nodeIds = artifact.participants.nodes.map((n) => n.id);
     const state = get();
+    // The live canvas wins for ids that carry over (the proposal's `ui`, if
+    // any, may be a stale echo of the last save); a proposal `ui` only fills
+    // ids the canvas doesn't know; anything else is auto-placed.
+    const proposalUi = artifact.ui ?? null;
     set({
       artifact,
-      // Reconcile against the existing layout so nodes that carry over keep
-      // their positions; new nodes get auto-placed.
-      layout: reconcileLayout(nodeIds, state.layout),
+      layout: seedLayout(
+        nodeIds,
+        { ...(proposalUi?.nodes ?? {}), ...state.layout },
+        SENTINEL_IDS,
+      ),
+      edgeBends: pruneBends(artifact, {
+        ...sanitizeBends(proposalUi?.edges),
+        ...state.edgeBends,
+      }),
       selection: null,
       // An applied proposal is an unsaved edit — the user reviews then Saves.
       dirty: true,
@@ -338,6 +382,23 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     set({ layout: { ...state.layout, [id]: position }, dirty: true });
   },
 
+  setEdgeBend: (id, offset) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      edgeBends: { ...state.edgeBends, [id]: { x: offset.x, y: offset.y } },
+      dirty: true,
+    });
+  },
+
+  resetEdgeBend: (id) => {
+    const state = get();
+    if (!state.artifact) return;
+    const { [id]: _removed, ...edgeBends } = state.edgeBends;
+    void _removed;
+    set({ edgeBends, dirty: true });
+  },
+
   connectNodes: (source, target) => {
     const state = get();
     if (!state.artifact) return;
@@ -395,7 +456,13 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
         (sel.id.startsWith(`${id}->`) || sel.id.endsWith(`->${id}`)))
         ? null
         : sel;
-    set({ artifact, layout, selection, dirty: true });
+    set({
+      artifact,
+      layout,
+      edgeBends: pruneBends(artifact, state.edgeBends),
+      selection,
+      dirty: true,
+    });
   },
 
   removeEdge: (id) => {
@@ -408,15 +475,23 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       state.selection?.kind === "edge" && state.selection.id === id
         ? null
         : state.selection;
-    set({ artifact: withEdges(state.artifact, edges), selection, dirty: true });
+    const artifact = withEdges(state.artifact, edges);
+    set({
+      artifact,
+      edgeBends: pruneBends(artifact, state.edgeBends),
+      selection,
+      dirty: true,
+    });
   },
 
   removeEntryNode: (id) => {
     const state = get();
     if (!state.artifact) return;
     const entries = effectiveEntryNodeIds(state.artifact).filter((x) => x !== id);
+    const artifact = withTopologyPatch(state.artifact, { entry_nodes: entries });
     set({
-      artifact: withTopologyPatch(state.artifact, { entry_nodes: entries }),
+      artifact,
+      edgeBends: pruneBends(artifact, state.edgeBends),
       selection: clearSelectionIf(state.selection, entryConnectorId(id)),
       dirty: true,
     });
@@ -427,18 +502,20 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     if (!state.artifact || !hasNode(state.artifact, id)) return;
     const entries = effectiveEntryNodeIds(state.artifact);
     if (entries.includes(id)) return;
-    set({
-      artifact: withTopologyPatch(state.artifact, { entry_nodes: [...entries, id] }),
-      dirty: true,
+    const artifact = withTopologyPatch(state.artifact, {
+      entry_nodes: [...entries, id],
     });
+    set({ artifact, edgeBends: pruneBends(artifact, state.edgeBends), dirty: true });
   },
 
   removeExitNode: (id) => {
     const state = get();
     if (!state.artifact) return;
     const exits = effectiveExitNodeIds(state.artifact).filter((x) => x !== id);
+    const artifact = withTopologyPatch(state.artifact, { exit_nodes: exits });
     set({
-      artifact: withTopologyPatch(state.artifact, { exit_nodes: exits }),
+      artifact,
+      edgeBends: pruneBends(artifact, state.edgeBends),
       selection: clearSelectionIf(state.selection, exitConnectorId(id)),
       dirty: true,
     });
@@ -449,10 +526,8 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     if (!state.artifact || !hasNode(state.artifact, id)) return;
     const exits = effectiveExitNodeIds(state.artifact);
     if (exits.includes(id)) return;
-    set({
-      artifact: withTopologyPatch(state.artifact, { exit_nodes: [...exits, id] }),
-      dirty: true,
-    });
+    const artifact = withTopologyPatch(state.artifact, { exit_nodes: [...exits, id] });
+    set({ artifact, edgeBends: pruneBends(artifact, state.edgeBends), dirty: true });
   },
 
   deleteCanvasEdge: (id) => {
@@ -480,14 +555,14 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
         },
       },
     };
-    set({ artifact, dirty: true });
+    set({ artifact, edgeBends: pruneBends(artifact, state.edgeBends), dirty: true });
   },
 
   relayout: () => {
     const state = get();
     if (!state.artifact) return;
     const nodeIds = state.artifact.participants.nodes.map((n) => n.id);
-    set({ layout: autoLayout(nodeIds), dirty: true });
+    set({ layout: autoLayout(nodeIds), edgeBends: {}, dirty: true });
   },
 
   setSelection: (selection) => set({ selection }),
@@ -562,4 +637,65 @@ function withEdges(artifact: MADArtifact, edges: EdgeArtifact[]): MADArtifact {
       topology: { ...artifact.interaction.topology, edges },
     },
   };
+}
+
+/* ------------------------ persisted layout (task 11.4) ------------------------ */
+
+/**
+ * Every edge id the canvas currently draws: the real participant edges plus
+ * the Start/End IO connectors (`__start__->X`, `X->__end__`).
+ */
+export function canvasEdgeIds(artifact: MADArtifact): Set<string> {
+  return new Set([
+    ...artifact.interaction.topology.edges.map(edgeId),
+    ...effectiveEntryNodeIds(artifact).map(entryConnectorId),
+    ...effectiveExitNodeIds(artifact).map(exitConnectorId),
+  ]);
+}
+
+/** Keep only bends whose edge still exists on the canvas. */
+export function pruneBends(artifact: MADArtifact, bends: EdgeBendMap): EdgeBendMap {
+  const live = canvasEdgeIds(artifact);
+  const next: EdgeBendMap = {};
+  for (const [id, offset] of Object.entries(bends)) {
+    if (live.has(id)) next[id] = offset;
+  }
+  return next;
+}
+
+/** Drop malformed points from a stored `ui.edges` map (defensive). */
+function sanitizeBends(raw: Record<string, unknown> | null | undefined): EdgeBendMap {
+  const next: EdgeBendMap = {};
+  for (const [id, p] of Object.entries(raw ?? {})) {
+    const pt = p as XYPosition | null;
+    if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+      next[id] = { x: pt.x, y: pt.y };
+    }
+  }
+  return next;
+}
+
+/**
+ * Return `artifact` with its presentation-only `ui` replaced by the current
+ * canvas layout + edge bends, restricted to ids that exist (participants, the
+ * Start/End sentinels when they have participants to flank, and live canvas
+ * edges). Used by Save so the persisted config carries its layout.
+ */
+export function withUiLayout(
+  artifact: MADArtifact,
+  layout: LayoutMap,
+  edgeBends: EdgeBendMap,
+): MADArtifact {
+  const participantIds = artifact.participants.nodes.map((n) => n.id);
+  const nodeIds = participantIds.length > 0 ? [...participantIds, ...SENTINEL_IDS] : [];
+  const nodes: Record<string, XYPosition> = {};
+  for (const id of nodeIds) {
+    const p = layout[id];
+    if (p) nodes[id] = { x: p.x, y: p.y };
+  }
+  const edges: Record<string, XYPosition> = {};
+  for (const [id, p] of Object.entries(pruneBends(artifact, edgeBends))) {
+    edges[id] = { x: p.x, y: p.y };
+  }
+  return { ...artifact, ui: { nodes, edges } };
 }

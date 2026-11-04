@@ -1,9 +1,9 @@
 ﻿import { memo } from "react";
-import { Handle, Position, type NodeProps } from "reactflow";
+import type { NodeProps } from "reactflow";
 
 import { roleIconUrl } from "@/assets/icons";
 import { DIMENSION_THEMES } from "@/taxonomy/dimensions";
-import { cn } from "@/lib/utils";
+import { SideHandles } from "./SideHandles";
 import { useProvidersQuery } from "./useProviders";
 import { providerColor, roleColor } from "./nodeStyle";
 
@@ -16,9 +16,9 @@ import { providerColor, roleColor } from "./nodeStyle";
  * distinct across the graph. The provider is shown by NAME (resolved from the
  * configured providers) rather than its opaque database id.
  *
- * The left handle is the INPUT (incoming messages) and the right handle is the
- * OUTPUT (outgoing messages). The "in"/"out" captions sit ABOVE each port (not
- * on the connection line) so they never overlap the edges/arrowheads.
+ * There are no fixed in/out ports (task 11.4): subtle hover handles on every
+ * side can start or end a connection, edges float to the node border, and the
+ * arrowhead alone conveys direction.
  */
 export interface ParticipantNodeData {
   label: string;
@@ -38,13 +38,6 @@ function primaryRole(roles: string[]): string {
   const known = roles.find((r) => roleIconUrl(r) !== undefined);
   return known ?? roles[0] ?? "debater";
 }
-
-/** Shared handle styling: a clear, moderate port marker. */
-const HANDLE_CLASS = "!size-3 !border-2 !border-background";
-
-/** Port caption placed above the handle so it never sits on the edge line. */
-const PORT_LABEL_CLASS =
-  "pointer-events-none absolute -top-5 text-[10px] font-semibold uppercase tracking-wide";
 
 function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeData>) {
   const role = primaryRole(data.roles);
@@ -69,7 +62,7 @@ function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeD
 
   return (
     <div
-      className="relative min-w-[200px] rounded-lg border-2 bg-background px-3 py-3 shadow-sm transition-shadow"
+      className="group relative min-w-[200px] rounded-lg border-2 bg-background px-3 py-3 shadow-sm transition-shadow"
       style={{
         borderColor: role_c.solid,
         boxShadow: selected ? `0 0 0 3px ${role_c.soft}` : undefined,
@@ -77,32 +70,8 @@ function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeD
       data-testid="participant-node"
       data-role={role}
     >
-      {/* INPUT port (left): incoming messages. Caption sits above the handle. */}
-      <Handle
-        id="in"
-        type="target"
-        position={Position.Left}
-        className={cn(HANDLE_CLASS)}
-        style={{ background: "hsl(var(--muted-foreground))" }}
-      />
-      <span className={cn(PORT_LABEL_CLASS, "left-0 text-muted-foreground")}>
-        in
-      </span>
-
-      {/* OUTPUT port (right): outgoing messages. Caption sits above the handle. */}
-      <Handle
-        id="out"
-        type="source"
-        position={Position.Right}
-        className={cn(HANDLE_CLASS)}
-        style={{ background: role_c.solid }}
-      />
-      <span
-        className={cn(PORT_LABEL_CLASS, "right-0")}
-        style={{ color: role_c.solid }}
-      >
-        out
-      </span>
+      {/* Direction-agnostic connectors on every side (arrows show direction). */}
+      <SideHandles color={role_c.solid} />
 
       <div className="flex items-center gap-2.5">
         <span

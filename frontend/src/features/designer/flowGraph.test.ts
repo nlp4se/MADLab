@@ -5,6 +5,7 @@ import { normalizeArtifact } from "./artifact";
 import {
   effectiveEntryNodeIds,
   effectiveExitNodeIds,
+  FLOATING_EDGE_TYPE,
   parseConnectorId,
   toFlowEdges,
   toStartEndEdges,
@@ -78,6 +79,16 @@ describe("flowGraph — arrows", () => {
         height: 22,
       });
     }
+  });
+
+  it("renders every edge (participant + Start/End connectors) as a floating edge", () => {
+    const a = chainArtifact();
+    const all = [...toFlowEdges(a, null), ...toStartEndEdges(a)];
+    expect(all.every((e) => e.type === FLOATING_EDGE_TYPE)).toBe(true);
+    // No stored bend -> default shape; a chain has no reciprocal pairs.
+    expect(all.every((e) => e.data?.bend === null && e.data?.reciprocal === false)).toBe(
+      true,
+    );
   });
 
   it("omits the arrowhead for an explicitly undirected edge", () => {

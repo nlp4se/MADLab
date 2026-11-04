@@ -1,17 +1,18 @@
-﻿import { useCallback, useEffect, useMemo } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import ReactFlow, {
   Background,
+  ConnectionMode,
   Controls,
   ReactFlowProvider,
-  addEdge,
   applyNodeChanges,
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
   type Node as FlowNode,
   type NodeChange,
+  type OnConnectStartParams,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -25,15 +26,17 @@ import { Inspector } from "./panels/Inspector";
 import { ParticipantNode } from "./ParticipantNode";
 import { END_NODE_ID, EndNode, START_NODE_ID, StartNode } from "./StartEndNodes";
 import {
-  isSyntheticId,
+  FLOATING_EDGE_TYPE,
   toFlowEdges,
   toFlowNodes,
   toStartEndEdges,
   toStartEndNodes,
 } from "./flowGraph";
+import { FloatingEdge } from "./FloatingEdge";
+import { resolveConnection } from "./ioNodes";
 import { AssistantChat } from "./AssistantChat";
 import { EdgeContextMenu, useEdgeContextMenu } from "./EdgeContextMenu";
-import { useDesignerStore } from "./designerStore";
+import { useDesignerStore, withUiLayout } from "./designerStore";
 import { topologyLabel } from "./topology";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
 
@@ -44,12 +47,26 @@ const NODE_TYPES = {
   end: EndNode,
 } as const;
 
+/** Register the floating, bendable edge type once (stable reference). */
+const EDGE_TYPES = { [FLOATING_EDGE_TYPE]: FloatingEdge } as const;
+
+/** The canvas node id under a pointer/touch event, if any. */
+function nodeIdAtEvent(event: MouseEvent | TouchEvent): string | null {
+  const point =
+    "changedTouches" in event ? event.changedTouches[0] : (event as MouseEvent);
+  if (!point || typeof document.elementFromPoint !== "function") return null;
+  const el = document.elementFromPoint(point.clientX, point.clientY);
+  const nodeEl = el?.closest(".react-flow__node");
+  return nodeEl?.getAttribute("data-id") ?? null;
+}
+
 /**
  * Visual debate designer — canvas (Reqs 6.1, 6.2, 6.4, 6.5, 6.7, 6.8).
  *
  * Loads a config by the `:configId` route param, seeds the designer store, and
  * renders the `G=(V,E)` graph with React Flow: participants as nodes (role icon
- * + model badge, labelled in/out ports), communication as directed edges, plus
+ * + model badge, connectable from any side), communication as floating,
+ * bendable directed edges (arrowheads convey direction, task 11.4), plus
  * synthetic Start/End nodes whose connectors show where the instance input
  * enters and the final output leaves. The Start/End nodes themselves are not in
  * the artifact (their positions are UI-only), but their connectors are: they
@@ -108,6 +125,7 @@ export function DesignerPage() {
 function DesignerCanvas({ configId }: { configId: number }) {
   const artifact = useDesignerStore((s) => s.artifact);
   const layout = useDesignerStore((s) => s.layout);
+  const edgeBends = useDesignerStore((s) => s.edgeBends);
   const selection = useDesignerStore((s) => s.selection);
   const dirty = useDesignerStore((s) => s.dirty);
 
@@ -148,11 +166,11 @@ function DesignerCanvas({ configId }: { configId: number }) {
     () =>
       artifact
         ? [
-            ...toFlowEdges(artifact, selectedEdgeId),
-            ...toStartEndEdges(artifact, selectedEdgeId),
+            ...toFlowEdges(artifact, selectedEdgeId, edgeBends),
+            ...toStartEndEdges(artifact, selectedEdgeId, edgeBends),
           ]
         : [],
-    [artifact, selectedEdgeId],
+    [artifact, selectedEdgeId, edgeBends],
   );
 
   // Right-click on any edge (participant edge or Start/End connector).
@@ -201,23 +219,51 @@ function DesignerCanvas({ configId }: { configId: number }) {
     [deleteCanvasEdge, setSelection],
   );
 
+  // Handles are direction-agnostic (ConnectionMode.Loose, any side to any
+  // side), so normalize the gesture: anything touching Start = Start -> X,
+  // anything touching End = X -> End, Start<->End rejected; between two
+  // participants the drag start is the source (see `resolveConnection`).
+  const applyConnection = useCallback(
+    (source: string, target: string) => {
+      const resolved = resolveConnection(source, target);
+      if (resolved?.kind === "entry") addEntryNode(resolved.nodeId);
+      else if (resolved?.kind === "exit") addExitNode(resolved.nodeId);
+      else if (resolved?.kind === "edge") connectNodes(resolved.source, resolved.target);
+    },
+    [addEntryNode, addExitNode, connectNodes],
+  );
+
+  // The node a connection drag started from; lets a drop anywhere on a node's
+  // body (not only on a handle) complete the connection in `onConnectEnd`.
+  const connectingFrom = useRef<string | null>(null);
+
+  const onConnectStart = useCallback(
+    (_event: unknown, params: OnConnectStartParams) => {
+      connectingFrom.current = params.nodeId ?? null;
+    },
+    [],
+  );
+
   const onConnect = useCallback(
     (connection: Connection) => {
-      const { source, target } = connection;
-      if (!source || !target) return;
-      if (source === START_NODE_ID && !isSyntheticId(target)) {
-        // Start(out) -> participant(in): (re)add an input connector.
-        addEntryNode(target);
-      } else if (target === END_NODE_ID && !isSyntheticId(source)) {
-        // participant(out) -> End(in): (re)add an output connector.
-        addExitNode(source);
-      } else if (!isSyntheticId(source) && !isSyntheticId(target)) {
-        connectNodes(source, target);
+      // Dropped on a handle: React Flow resolved it (fires before onConnectEnd).
+      connectingFrom.current = null;
+      if (connection.source && connection.target) {
+        applyConnection(connection.source, connection.target);
       }
-      // Anything else (X -> Start, End -> X, Start -> End) is rejected.
-      void addEdge(connection, edges);
     },
-    [addEntryNode, addExitNode, connectNodes, edges],
+    [applyConnection],
+  );
+
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      const from = connectingFrom.current;
+      connectingFrom.current = null;
+      if (!from) return;
+      const to = nodeIdAtEvent(event);
+      if (to && to !== from) applyConnection(from, to);
+    },
+    [applyConnection],
   );
 
   const onPaneClick = useCallback(() => {
@@ -247,18 +293,19 @@ function DesignerCanvas({ configId }: { configId: number }) {
 
   const handleSave = useCallback(async () => {
     if (!artifact) return;
-    const body = { artifact: artifact as unknown as JsonObject };
+    // Persist the canvas layout (node positions incl. Start/End + edge bends)
+    // in the presentation-only `ui` field, restricted to ids that exist.
+    const toSave = withUiLayout(artifact, layout, edgeBends) as unknown as JsonObject;
+    const body = { artifact: toSave };
     try {
-      const result = await configsApi.validate({
-        artifact: artifact as unknown as JsonObject,
-      });
+      const result = await configsApi.validate({ artifact: toSave });
       setValidationErrors(result.errors);
       if (!result.valid) return;
     } catch {
       /* fall through; the save itself will surface any error */
     }
     updateConfig.mutate(body, { onSuccess: () => markSaved() });
-  }, [artifact, updateConfig, markSaved, setValidationErrors]);
+  }, [artifact, layout, edgeBends, updateConfig, markSaved, setValidationErrors]);
 
   const underDevSelections = useMemo(
     () => (artifact ? collectUnderDev(artifact, isUnderDevelopment, getValue) : []),
@@ -335,9 +382,13 @@ function DesignerCanvas({ configId }: { configId: number }) {
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
+            connectionMode={ConnectionMode.Loose}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onConnectStart={onConnectStart}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             onPaneClick={onPaneClick}
             onEdgeContextMenu={onEdgeContextMenu}
             onMoveStart={closeEdgeMenu}

@@ -18,7 +18,8 @@
 import { MarkerType, type Edge as FlowEdge, type Node as FlowNode } from "reactflow";
 
 import type { MADArtifact } from "./artifact";
-import { edgeId } from "./designerStore";
+import { edgeId, type EdgeBendMap } from "./designerStore";
+import type { XYPosition as BendOffset } from "./layout";
 import {
   effectiveEntryNodeIds,
   effectiveExitNodeIds,
@@ -39,6 +40,19 @@ export const DEFAULT_EDGE_COLOR = "#0d9488";
 /** Colour for the synthetic Start/End flow edges (emerald / slate). */
 const START_EDGE_COLOR = "#10b981";
 const END_EDGE_COLOR = "#64748b";
+
+/** React Flow edge type key for the custom floating edge (see FloatingEdge.tsx). */
+export const FLOATING_EDGE_TYPE = "floating";
+
+/** Data carried by every floating edge. */
+export interface FloatingEdgeData {
+  /** Stored knob offset from the centres' midpoint; null = default shape. */
+  bend: BendOffset | null;
+  /** True when the reverse edge exists (bow the pair to opposite sides). */
+  reciprocal: boolean;
+  /** Stroke colour (also used for the edge label / knob). */
+  color: string;
+}
 
 /** Larger arrowhead so direction reads clearly on the canvas. */
 const ARROW = { type: MarkerType.ArrowClosed, width: 22, height: 22 } as const;
@@ -62,11 +76,20 @@ export function toFlowNodes(
   }));
 }
 
+/**
+ * The real participant edges (E), as floating edges (task 11.4): they attach
+ * to the node borders, carry their stored bend (if any), and are flagged
+ * `reciprocal` when the reverse edge also exists so the pair renders as two
+ * separated curves. Direction is conveyed by the arrowhead only.
+ */
 export function toFlowEdges(
   artifact: MADArtifact,
   selectedId: string | null,
-): FlowEdge[] {
-  return artifact.interaction.topology.edges.map((edge) => {
+  edgeBends: EdgeBendMap = {},
+): FlowEdge<FloatingEdgeData>[] {
+  const edges = artifact.interaction.topology.edges;
+  const ids = new Set(edges.map(edgeId));
+  return edges.map((edge) => {
     const id = edgeId(edge);
     const color = edge.color ?? DEFAULT_EDGE_COLOR;
     const isSelected = id === selectedId;
@@ -76,9 +99,12 @@ export function toFlowEdges(
       target: edge.target,
       label: edge.label ?? undefined,
       selected: isSelected,
-      // smoothstep avoids the tight bezier loop that overlapped arrowheads.
-      type: "smoothstep",
-      pathOptions: { borderRadius: 18 },
+      type: FLOATING_EDGE_TYPE,
+      data: {
+        bend: edgeBends[id] ?? null,
+        reciprocal: ids.has(`${edge.target}->${edge.source}`),
+        color,
+      },
       // `directed` defaults to true; show an arrowhead for directed edges.
       markerEnd:
         edge.directed === false ? undefined : { ...ARROW, color },
@@ -87,7 +113,7 @@ export function toFlowEdges(
         strokeWidth: isSelected ? 3 : 2,
       },
       labelStyle: { fill: color, fontWeight: 600 },
-    } satisfies FlowEdge;
+    } satisfies FlowEdge<FloatingEdgeData>;
   });
 }
 
@@ -139,8 +165,8 @@ export function toStartEndNodes(
   );
   // Default placement flanks the participant cloud; a user drag is remembered
   // in the UI-only layout map (keyed by the sentinel ids) and takes precedence,
-  // so Start/End can be repositioned like any node. Positions are never part of
-  // the artifact.
+  // so Start/End can be repositioned like any node. On Save it is persisted in
+  // the presentation-only `artifact.ui.nodes` (never in the graph itself).
   const startPos = layout[START_NODE_ID] ?? { x: minX - 180, y: centerY };
   const endPos = layout[END_NODE_ID] ?? { x: maxX + 220, y: centerY };
   const common = {
@@ -181,7 +207,8 @@ export function toStartEndNodes(
 export function toStartEndEdges(
   artifact: MADArtifact,
   selectedId: string | null = null,
-): FlowEdge[] {
+  edgeBends: EdgeBendMap = {},
+): FlowEdge<FloatingEdgeData>[] {
   const nodes = artifact.participants.nodes;
   if (nodes.length === 0) return [];
   const connector = (
@@ -189,12 +216,13 @@ export function toStartEndEdges(
     source: string,
     target: string,
     color: string,
-  ): FlowEdge => ({
+  ): FlowEdge<FloatingEdgeData> => ({
     id,
     source,
     target,
-    type: "smoothstep",
-    pathOptions: { borderRadius: 18 },
+    // Same floating, bendable edge as participant edges (task 11.4).
+    type: FLOATING_EDGE_TYPE,
+    data: { bend: edgeBends[id] ?? null, reciprocal: false, color },
     deletable: true,
     selected: id === selectedId,
     markerEnd: { ...ARROW, color },

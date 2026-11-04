@@ -400,6 +400,14 @@ describe("smoke e2e: create → save → run → inspect", () => {
       backend.configs.get(configId)!.artifact as any
     ).participants.nodes.length;
     expect(savedNodes).toBe(nodesBefore + 1);
+    // Save also writes the canvas layout into the presentation-only `ui` field
+    // (task 11.4): one stored position per participant.
+    const savedArtifact = backend.configs.get(configId)!.artifact as any;
+    const participantIds = savedArtifact.participants.nodes.map((n: any) => n.id);
+    expect(Object.keys(savedArtifact.ui.nodes)).toEqual(
+      expect.arrayContaining(participantIds),
+    );
+    expect(savedArtifact.ui.edges).toEqual({});
 
     /* --- 3. RUN: launch the config in single-input mode --- */
     renderApp("/run");
