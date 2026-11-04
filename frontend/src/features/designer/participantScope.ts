@@ -11,8 +11,9 @@
  *  - Persona heterogeneity (only when `manual`): `homogeneous` = ONE shared
  *    persona applied to every node with the `debater` role (judges /
  *    summarizers keep their own); `heterogeneous` = per node.
- *  - Base model heterogeneity: `homogeneous` = ONE shared provider / model /
- *    family applied to ALL nodes; `heterogeneous` = per node.
+ *  - Base model heterogeneity: `homogeneous` = ONE shared provider / model
+ *    applied to ALL nodes (the provider-derived family follows it);
+ *    `heterogeneous` = per node. Homogeneity compares provider/model only.
  *
  * The shared value is not a separate schema field (the schema is unchanged):
  * it is derived from a "source" node (first debater with persona data / first
@@ -35,10 +36,21 @@ export const PERSONA_FIELDS = [
   "template_ref",
 ] as const;
 
-/** The base-model fields governed by the base-model heterogeneity setting. */
+/**
+ * The base-model fields broadcast under a shared model. `family` is included
+ * so the provider-derived family (written on bind, task 11.9) follows the
+ * provider to every node, but it is NOT compared: see {@link COMPARED_MODEL_FIELDS}.
+ */
 export const MODEL_FIELDS = ["provider_id", "model_key", "family"] as const;
 
-/** Schema default for `base_model.family` (used when comparing models). */
+/**
+ * The fields base-model homogeneity compares: provider and model only. The
+ * family is derived from the provider, so it is never an independent source of
+ * divergence (task 11.9).
+ */
+export const COMPARED_MODEL_FIELDS = ["provider_id", "model_key"] as const;
+
+/** Schema default for `base_model.family` (used when no family is stored). */
 const DEFAULT_FAMILY = "closed_weight";
 
 export type PersonaFields = Pick<PersonaArtifact, (typeof PERSONA_FIELDS)[number]>;
@@ -117,7 +129,10 @@ export function hasPersonaData(persona: PersonaArtifact | undefined): boolean {
 }
 
 const personaSig = (n: ParticipantNodeArtifact) => JSON.stringify(pickPersona(n.persona));
-const modelSig = (n: ParticipantNodeArtifact) => JSON.stringify(pickModel(n.base_model));
+const modelSig = (n: ParticipantNodeArtifact) => {
+  const m = pickModel(n.base_model);
+  return JSON.stringify(COMPARED_MODEL_FIELDS.map((f) => m[f]));
+};
 
 /** The source of the shared persona: first debater with persona data, else first debater. */
 export function personaSourceNode(
@@ -149,7 +164,7 @@ export function personasDiverge(nodes: ParticipantNodeArtifact[]): boolean {
   return new Set(nodes.filter(isDebater).map(personaSig)).size > 1;
 }
 
-/** True when the nodes do not all carry the same provider/model/family. */
+/** True when the nodes do not all carry the same provider/model (family is derived). */
 export function modelsDiverge(nodes: ParticipantNodeArtifact[]): boolean {
   return new Set(nodes.map(modelSig)).size > 1;
 }

@@ -31,8 +31,9 @@ import { ModelEditor, PersonaEditor } from "./sharedEditors";
  *  - Persona heterogeneity (only with `manual`): `homogeneous` edits ONE shared
  *    persona here, applied to every debater-role node (judges / summarizers
  *    keep their own); `heterogeneous` = set per participant.
- *  - Base model heterogeneity: `homogeneous` edits ONE shared provider / model /
- *    family here, applied to ALL nodes; `heterogeneous` = set per participant.
+ *  - Base model heterogeneity: `homogeneous` edits ONE shared provider / model
+ *    here, applied to ALL nodes (the family is derived from the provider and
+ *    shown read-only); `heterogeneous` = set per participant.
  *
  * Data that contradicts the declared mode (a loaded / imported / assistant
  * config) is never silently rewritten: an inline banner offers the two fixes.

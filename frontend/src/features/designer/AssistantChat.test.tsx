@@ -18,6 +18,7 @@ function makeProvider(overrides: Partial<ProviderResponse> = {}): ProviderRespon
     kind: "openai",
     base_url: null,
     models: ["gpt-4o", "gpt-4o-mini"],
+    family: "closed_weight",
     has_key: true,
     created_at: null,
     updated_at: null,

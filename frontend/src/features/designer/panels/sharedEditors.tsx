@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { Link2 } from "lucide-react";
 
+import { PROVIDER_FAMILY_LABELS, providerFamily } from "@/api";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
@@ -8,7 +10,7 @@ import type { BaseModelArtifact, PersonaArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
 import type { ModelFields, PersonaFields } from "../participantScope";
 import { useProvidersQuery } from "../useProviders";
-import { Field, TaxonomySelect } from "./fields";
+import { Field } from "./fields";
 
 /**
  * Editors shared by the debate-level (`ParticipantsDimensionPanel`) and the
@@ -96,7 +98,10 @@ export function PersonaEditor({
   );
 }
 
-/** Provider + model + family binding (Req 1.8, 8.6). */
+/**
+ * Provider + model binding with the read-only, provider-derived family
+ * (Req 1.7, 1.8, 8.6; task 11.9).
+ */
 export function ModelEditor({
   value,
   onChange,
@@ -108,13 +113,40 @@ export function ModelEditor({
   idPrefix?: string;
   disabled?: boolean;
 }) {
-  const { getSubDimension, isUnderDevelopment } = useTaxonomy();
-  const familySub = getSubDimension("participants", "base_model_family");
   const providersQuery = useProvidersQuery();
   const providers = providersQuery.data ?? [];
   const boundProvider = providers.find(
     (p) => String(p.id) === String(value?.provider_id),
   );
+
+  // Binding / changing the provider writes the derived family (task 11.9);
+  // unbinding leaves the stored family as is.
+  const bindProvider = (id: string) => {
+    const next = providers.find((p) => String(p.id) === id);
+    const patch: Partial<ModelFields> = { provider_id: id || null, model_key: null };
+    if (next) patch.family = providerFamily(next);
+    onChange(patch);
+  };
+
+  // Read-only family display: derived from the bound provider, never stored
+  // state the user edits. A stale stored family simply displays the derived
+  // one (nothing is rewritten on load).
+  const isBound = Boolean(value?.provider_id);
+  let familyText: string;
+  let familyNote: string;
+  if (!isBound) {
+    familyText = "Unbound";
+    familyNote = "Bind a provider to set the family (open- or closed-weight).";
+  } else if (boundProvider) {
+    familyText = PROVIDER_FAMILY_LABELS[providerFamily(boundProvider)];
+    familyNote = `Derived from the provider "${boundProvider.name}"; change it in the Providers view.`;
+  } else if (providersQuery.isLoading) {
+    familyText = "Loading…";
+    familyNote = "Derived from the bound provider.";
+  } else {
+    familyText = value?.family ? PROVIDER_FAMILY_LABELS[value.family] : "Unknown";
+    familyNote = "The bound provider no longer exists; showing the stored family.";
+  }
 
   return (
     <>
@@ -127,9 +159,7 @@ export function ModelEditor({
           id={`${idPrefix}provider`}
           value={value?.provider_id ?? ""}
           disabled={disabled}
-          onChange={(e) =>
-            onChange({ provider_id: e.target.value || null, model_key: null })
-          }
+          onChange={(e) => bindProvider(e.target.value)}
         >
           <option value="">— Select provider —</option>
           {providers.map((p) => (
@@ -172,16 +202,21 @@ export function ModelEditor({
         </Select>
       </Field>
 
-      {familySub ? (
-        <TaxonomySelect
-          sub={familySub}
-          value={value?.family}
-          onChange={(v) => onChange({ family: v as "open_weight" | "closed_weight" })}
-          isUnderDevelopment={isUnderDevelopment}
+      <Field
+        label="Base model family"
+        description={familyNote}
+        htmlFor={`${idPrefix}family`}
+        hint="Open- or closed-weight is a property of the provider, not a free parameter."
+      >
+        <Input
           id={`${idPrefix}family`}
-          disabled={disabled}
+          value={familyText}
+          readOnly
+          aria-readonly="true"
+          className="bg-muted/40"
+          data-testid={`${idPrefix}family-display`}
         />
-      ) : null}
+      </Field>
     </>
   );
 }

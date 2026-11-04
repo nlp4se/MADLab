@@ -17,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ProviderResponse } from "@/api";
+import { PROVIDER_FAMILY_LABELS, providerFamily, type ProviderResponse } from "@/api";
 
 import { providerKindLabel } from "./kinds";
 import { ProviderFormDialog } from "./ProviderFormDialog";
@@ -128,6 +128,9 @@ function ProviderCard({
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             {provider.name}
             <Badge variant="outline">{providerKindLabel(provider.kind)}</Badge>
+            <Badge variant="outline" data-testid={`provider-family-${provider.id}`}>
+              {PROVIDER_FAMILY_LABELS[providerFamily(provider)]}
+            </Badge>
             <Badge
               variant={provider.has_key ? "secondary" : "outline"}
               aria-label={

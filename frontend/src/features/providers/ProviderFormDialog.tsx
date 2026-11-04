@@ -15,8 +15,12 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  PROVIDER_FAMILY_LABELS,
   PROVIDER_KINDS,
+  defaultFamily,
+  isMixedKind,
   type ProviderCreateRequest,
+  type ProviderFamily,
   type ProviderKind,
   type ProviderResponse,
   type ProviderUpdateRequest,
@@ -60,6 +64,9 @@ export function ProviderFormDialog({
 
   const [name, setName] = useState("");
   const [kind, setKind] = useState<ProviderKind>("openai");
+  // Base-model family (task 11.9): pre-filled from the kind; only editable for
+  // mixed kinds (fixed kinds always show their derived family).
+  const [family, setFamily] = useState<ProviderFamily>(defaultFamily("openai"));
   const [baseUrl, setBaseUrl] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [modelDraft, setModelDraft] = useState("");
@@ -73,6 +80,7 @@ export function ProviderFormDialog({
     if (!open) return;
     setName(provider?.name ?? "");
     setKind(provider?.kind ?? "openai");
+    setFamily(provider?.family ?? defaultFamily(provider?.kind ?? "openai"));
     setBaseUrl(provider?.base_url ?? "");
     setModels(provider?.models ?? []);
     setModelDraft("");
@@ -123,6 +131,8 @@ export function ProviderFormDialog({
         base_url: base,
         models,
       };
+      // Family is sent only for mixed kinds; fixed kinds derive it.
+      if (isMixedKind(kind)) body.family = family;
       // Tri-state key (Req 8.4): omit=keep, string=set, null=clear.
       if (keyAction === "set") body.api_key = apiKey;
       else if (keyAction === "clear") body.api_key = null;
@@ -139,6 +149,7 @@ export function ProviderFormDialog({
       base_url: base,
       models,
     };
+    if (isMixedKind(kind)) body.family = family;
     if (apiKey.trim()) body.api_key = apiKey;
     create.mutate(body, { onSuccess: () => onOpenChange(false) });
   };
@@ -171,7 +182,12 @@ export function ProviderFormDialog({
             <Select
               id="provider-kind"
               value={kind}
-              onChange={(e) => setKind(e.target.value as ProviderKind)}
+              onChange={(e) => {
+                const next = e.target.value as ProviderKind;
+                setKind(next);
+                // Re-derive from the new kind (mirrors the backend on update).
+                setFamily(defaultFamily(next));
+              }}
             >
               {PROVIDER_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -180,6 +196,8 @@ export function ProviderFormDialog({
               ))}
             </Select>
           </div>
+
+          <FamilyField kind={kind} family={family} onChange={setFamily} />
 
           <div className="space-y-1.5">
             <Label htmlFor="provider-base-url">Base URL</Label>
@@ -239,6 +257,47 @@ export function ProviderFormDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Base-model family (task 11.9). Fixed kinds show their derived family
+ * read-only with the reason; mixed kinds (a vendor with both open- and
+ * closed-weight models, or a generic gateway) offer a select.
+ */
+function FamilyField({
+  kind,
+  family,
+  onChange,
+}: {
+  kind: ProviderKind;
+  family: ProviderFamily;
+  onChange: (family: ProviderFamily) => void;
+}) {
+  const mixed = isMixedKind(kind);
+  const value = mixed ? family : defaultFamily(kind);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="provider-family">Family</Label>
+      <Select
+        id="provider-family"
+        value={value}
+        disabled={!mixed}
+        aria-describedby="provider-family-help"
+        onChange={(e) => onChange(e.target.value as ProviderFamily)}
+      >
+        {(Object.keys(PROVIDER_FAMILY_LABELS) as ProviderFamily[]).map((f) => (
+          <option key={f} value={f}>
+            {PROVIDER_FAMILY_LABELS[f]}
+          </option>
+        ))}
+      </Select>
+      <p id="provider-family-help" className="text-xs text-muted-foreground">
+        {mixed
+          ? `${providerKindLabel(kind)} can serve open- or closed-weight models; choose the family of the models this provider exposes. Participants bound to it inherit this family.`
+          : `Fixed by the kind: ${providerKindLabel(kind)} models are ${PROVIDER_FAMILY_LABELS[value].toLowerCase()}. Participants bound to this provider inherit it.`}
+      </p>
+    </div>
   );
 }
 

@@ -148,7 +148,7 @@ export interface DesignerState {
   ) => void;
   /** Edit the shared persona: applied to every debater-role node. */
   updateSharedPersona: (patch: Partial<PersonaFields>) => void;
-  /** Edit the shared provider/model/family: applied to every node. */
+  /** Edit the shared provider/model (+ derived family): applied to every node. */
   updateSharedModel: (patch: Partial<ModelFields>) => void;
   /** Conflict fix: copy the source debater's persona to every debater. */
   alignPersonas: () => void;

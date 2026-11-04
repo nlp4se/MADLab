@@ -337,20 +337,102 @@ describe("taxonomy-driven forms — defaults pre-filled (Req 7.1)", () => {
     expect(resolution.value).toBe("majority_vote");
   });
 
-  it("Participants panel base-model family falls back to the taxonomy default", async () => {
+  it("base-model family is read-only and shows Unbound without a provider (task 11.9)", async () => {
     useDesignerStore.getState().setSelection({ kind: "node", id: "a" });
     renderPanel(<ParticipantsPanel nodeId="a" />);
 
-    // The node declares no base_model.family; the select shows the catalog
-    // default ("closed_weight") rather than an empty value.
-    const family = (await screen.findByLabelText(
-      "Base model family",
-    )) as HTMLSelectElement;
-    expect(family.value).toBe("closed_weight");
+    const family = (await screen.findByLabelText("Base model family")) as HTMLInputElement;
+    expect(family.tagName).toBe("INPUT");
+    expect(family).toHaveAttribute("readonly");
+    expect(family.value).toBe("Unbound");
 
     // Dimension-level heterogeneity is NOT in the per-node panel anymore — it
     // moved to the config-level ParticipantsDimensionPanel (no selection).
     expect(screen.queryByLabelText("Persona heterogeneity")).toBeNull();
+  });
+
+  it("binding or changing the provider writes the derived family (task 11.9)", async () => {
+    // Per-participant models so the node-level editor is enabled.
+    useDesignerStore.getState().loadArtifact(99, {
+      ...artifact(),
+      participants: { ...artifact().participants, base_model_heterogeneity: "heterogeneous" },
+    });
+    const user = userEvent.setup();
+    renderPanel(<ParticipantsPanel nodeId="a" />);
+
+    const provider = await screen.findByLabelText("Provider");
+    await waitFor(() =>
+      expect(within(provider).getByRole("option", { name: "Local Ollama" })).toBeInTheDocument(),
+    );
+    await user.selectOptions(provider, "2");
+    expect(artifact().participants.nodes[0].base_model).toMatchObject({
+      provider_id: "2",
+      family: "open_weight",
+    });
+    expect((screen.getByLabelText("Base model family") as HTMLInputElement).value).toBe(
+      "Open-weight",
+    );
+
+    await user.selectOptions(provider, "1");
+    expect(artifact().participants.nodes[0].base_model?.family).toBe("closed_weight");
+    expect((screen.getByLabelText("Base model family") as HTMLInputElement).value).toBe(
+      "Closed-weight",
+    );
+  });
+
+  it("a stale stored family displays the derived one without dirtying (task 11.9)", async () => {
+    useDesignerStore.getState().loadArtifact(1, {
+      ...artifact(),
+      participants: {
+        ...artifact().participants,
+        nodes: [
+          {
+            id: "a",
+            label: "Alpha",
+            roles: ["debater"],
+            base_model: { provider_id: "2", model_key: "llama3", family: "closed_weight" },
+          },
+        ],
+      },
+    });
+    renderPanel(<ParticipantsPanel nodeId="a" />);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Base model family") as HTMLInputElement).value).toBe(
+        "Open-weight",
+      ),
+    );
+    expect(useDesignerStore.getState().dirty).toBe(false);
+    expect(artifact().participants.nodes[0].base_model?.family).toBe("closed_weight");
+  });
+
+  it("the shared (debate-level) editor writes the derived family to every node (task 11.9)", async () => {
+    useDesignerStore.getState().loadArtifact(1, {
+      ...artifact(),
+      participants: {
+        ...artifact().participants,
+        base_model_heterogeneity: "homogeneous",
+        nodes: [
+          { id: "a", label: "Alpha", roles: ["debater"], base_model: {} },
+          { id: "b", label: "Beta", roles: ["judge"], base_model: {} },
+        ],
+      },
+    });
+    useDesignerStore.getState().setSelection(null);
+    const user = userEvent.setup();
+    renderPanel(<ParticipantsDimensionPanel />);
+
+    const provider = await screen.findByLabelText("Provider");
+    await waitFor(() =>
+      expect(within(provider).getByRole("option", { name: "Local Ollama" })).toBeInTheDocument(),
+    );
+    await user.selectOptions(provider, "2");
+    for (const node of artifact().participants.nodes) {
+      expect(node.base_model).toMatchObject({ provider_id: "2", family: "open_weight" });
+    }
+    expect((screen.getByLabelText("Base model family") as HTMLInputElement).value).toBe(
+      "Open-weight",
+    );
   });
 
   it("dimension-level participant settings default (shown with no node selected, Req 7.1)", async () => {

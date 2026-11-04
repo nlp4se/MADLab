@@ -8,6 +8,7 @@ import {
   conflictNodeIds,
   detectConflicts,
   inheritShared,
+  modelsDiverge,
   nodePersonaScope,
   personaMode,
 } from "./participantScope";
@@ -133,6 +134,27 @@ describe("participantScope — conflict detection", () => {
     expect(c.kind).toBe("model_divergent");
     expect(c.sourceId).toBe("b");
     expect(conflictNodeIds(p)).toEqual(new Set(["a", "j"]));
+  });
+
+  it("homogeneity compares provider/model only, not the derived family (task 11.9)", () => {
+    const p = participants();
+    p.nodes = p.nodes.map((n, i) => ({
+      ...n,
+      base_model: {
+        provider_id: "1",
+        model_key: "gpt-4o",
+        family: i === 0 ? "open_weight" : "closed_weight",
+      },
+    }));
+    expect(modelsDiverge(p.nodes)).toBe(false);
+    expect(detectConflicts(p)).toEqual([]);
+  });
+
+  it("the family still follows a shared provider change", () => {
+    const next = applyNodePatch(participants(), "a", {
+      base_model: { provider_id: "2", model_key: null, family: "open_weight" },
+    });
+    expect(next.every((n) => n.base_model?.family === "open_weight")).toBe(true);
   });
 });
 

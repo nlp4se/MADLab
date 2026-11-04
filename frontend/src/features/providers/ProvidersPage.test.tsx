@@ -17,6 +17,7 @@ function makeProvider(
     kind: "openai",
     base_url: null,
     models: ["gpt-4o", "gpt-4o-mini"],
+    family: "closed_weight",
     has_key: true,
     created_at: null,
     updated_at: null,
@@ -321,6 +322,85 @@ describe("ProvidersPage", () => {
     expect(
       (document.body.innerHTML ?? "").includes(SECRET),
     ).toBe(false);
+  });
+
+  it("shows each provider's family on its card (task 11.9)", async () => {
+    installFetch({
+      providers: [
+        makeProvider(),
+        makeProvider({ id: 2, name: "Gateway", kind: "openai_compatible", family: "open_weight" }),
+      ],
+    });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-family-1")).toHaveTextContent("Closed-weight"),
+    );
+    expect(screen.getByTestId("provider-family-2")).toHaveTextContent("Open-weight");
+  });
+
+  it("Family is read-only for fixed kinds and editable for mixed kinds (task 11.9)", async () => {
+    const requests: { method: string; url: string; body: unknown }[] = [];
+    installFetch({
+      onRequest: (method, url, body) => requests.push({ method, url, body }),
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("OpenAI (prod)")).toBeInTheDocument(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Actions for OpenAI \(prod\)/i }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: /Edit/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Fixed kind: pre-filled from the kind, disabled, with the reason.
+    const family = within(dialog).getByLabelText("Family") as HTMLSelectElement;
+    expect(family.value).toBe("closed_weight");
+    expect(family).toBeDisabled();
+    expect(within(dialog).getByText(/Fixed by the kind: OpenAI models are closed-weight/)).toBeInTheDocument();
+
+    // Fixed open-weight kind: re-derived on kind change.
+    const kind = within(dialog).getByLabelText("Kind");
+    await user.selectOptions(kind, "ollama");
+    expect(family.value).toBe("open_weight");
+    expect(family).toBeDisabled();
+
+    // Mixed kind: pre-filled with its default and editable.
+    await user.selectOptions(kind, "mistral");
+    expect(family.value).toBe("closed_weight");
+    expect(family).toBeEnabled();
+    await user.selectOptions(family, "open_weight");
+
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => {
+      const put = requests.find((r) => r.method === "PUT");
+      expect(put).toBeTruthy();
+      expect(put!.body).toMatchObject({ kind: "mistral", family: "open_weight" });
+    });
+  });
+
+  it("omits family for fixed kinds on save (task 11.9)", async () => {
+    const requests: { method: string; url: string; body: unknown }[] = [];
+    installFetch({
+      onRequest: (method, url, body) => requests.push({ method, url, body }),
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("OpenAI (prod)")).toBeInTheDocument(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Actions for OpenAI \(prod\)/i }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: /Edit/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => {
+      const put = requests.find((r) => r.method === "PUT");
+      expect(put).toBeTruthy();
+      expect(put!.body as Record<string, unknown>).not.toHaveProperty("family");
+    });
   });
 
   it("reports a clear error when connectivity fails (Req 8.5)", async () => {

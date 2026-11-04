@@ -454,6 +454,26 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
     every participant and End right of every participant, deterministic output; crossing count not
     worse than the old circle on chain/star/tree; new-node placement does not overlap.
   - _Requirements: 6.1, 6.2, 6.4, 6.8_
+
+- [x] 11.9 Base model family derived from the provider (not a free parameter)
+  - Providers: new nullable `family` column on `providers` (open_weight | closed_weight), added on
+    startup for existing databases (idempotent ALTER TABLE in `init_db`; bump the schema version
+    marker). Fixed by kind: openai / anthropic / gemini = closed_weight; ollama / vllm / deepseek =
+    open_weight. Mixed kinds (mistral, openai_compatible) take the stored value, defaulting to
+    closed_weight (mistral) and open_weight (openai_compatible). `ProviderResponse` returns the
+    effective `family`; create/update accept it only for mixed kinds and reject a value that
+    contradicts a fixed kind (422).
+  - Providers view: Family field, pre-filled from the kind; read-only with the reason for fixed kinds,
+    editable for mixed kinds.
+  - Designer: family is no longer editable at node or debate level. ModelEditor shows it read-only
+    (derived from the bound provider; "Unbound" when none). Binding or changing a provider writes
+    the derived family into `base_model.family`. Base-model homogeneity compares provider/model only.
+  - Backend normalization: configuration create/update/import and the execution config snapshot set
+    `base_model.family` from the bound provider when it exists (unbound nodes keep the stored value).
+    Engine and artifact schema unchanged. Assistant prompt: family is derived, never chosen.
+  - Tests: kind -> family mapping, column added to an old DB, provider API accept/reject, Providers
+    view field states, designer read-only display and write-on-bind, save/snapshot normalization.
+  - _Requirements: 1.7, 1.8, 8.2, 8.6, 14.3_
 ```
 
 ---

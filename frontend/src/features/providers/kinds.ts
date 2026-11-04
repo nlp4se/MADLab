@@ -1,9 +1,8 @@
 import type { ProviderKind } from "@/api";
 
 /**
- * Human-readable labels for the eight supported provider kinds (Req 8.2):
- * closed-weight (OpenAI, Anthropic, Gemini, Mistral, DeepSeek) and
- * open-weight / local backends (Ollama, vLLM, generic OpenAI-compatible).
+ * Human-readable labels for the eight supported provider kinds (Req 8.2). The
+ * base-model family each kind implies lives in `@/api` (`providerFamily.ts`).
  */
 export const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
   openai: "OpenAI",

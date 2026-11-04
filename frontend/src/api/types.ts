@@ -187,12 +187,20 @@ export const PROVIDER_KINDS: ProviderKind[] = [
   "openai_compatible",
 ];
 
+/** Base-model family of a provider (task 11.9). */
+export type ProviderFamily = "open_weight" | "closed_weight";
+
 export interface ProviderResponse {
   id: number;
   name: string;
   kind: ProviderKind;
   base_url: string | null;
   models: string[];
+  /**
+   * Effective base-model family: fixed by kind, or the stored choice (else the
+   * kind default) for mixed kinds (mistral, openai_compatible).
+   */
+  family: ProviderFamily;
   /** The only key-related signal; the key itself is never returned (Req 8.4). */
   has_key: boolean;
   created_at: string | null;
@@ -206,6 +214,8 @@ export interface ProviderCreateRequest {
   models?: string[];
   /** Write-only; encrypted at rest, never echoed back (Req 8.4). */
   api_key?: string | null;
+  /** Only meaningful for mixed kinds; a contradicting value is a 422. */
+  family?: ProviderFamily | null;
 }
 
 export interface ProviderUpdateRequest {
@@ -213,6 +223,11 @@ export interface ProviderUpdateRequest {
   kind?: ProviderKind | null;
   base_url?: string | null;
   models?: string[] | null;
+  /**
+   * Mixed kinds only: omit to keep (re-derived when the kind changes), `null`
+   * resets to the kind default. A value contradicting a fixed kind is a 422.
+   */
+  family?: ProviderFamily | null;
   /**
    * Write-only, tri-state: omit to keep the stored key, send a string to
    * replace it, send `null` to clear it (Req 8.4).
