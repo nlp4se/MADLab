@@ -1,20 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, MessageSquare, Send, Sparkles, Wrench, X } from "lucide-react";
+import {
+  Loader2,
+  MessageSquare,
+  MessageSquarePlus,
+  Send,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react";
 
-import type {
-  AssistantDesignResponse,
-  AssistantMessage,
-  JsonObject,
-  ProviderResponse,
-} from "@/api";
+import type { JsonObject, ProviderResponse } from "@/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+import {
+  EMPTY_SESSION,
+  chatKey,
+  historyFor,
+  useAssistantChatStore,
+  type ChatTurn,
+} from "./assistantChatStore";
 import { useDesignerStore } from "./designerStore";
 import { useProvidersQuery } from "./useProviders";
-import { useAssistantDesign } from "./useAssistant";
+import { useAssistantChatSend } from "./useAssistant";
 
 /**
  * AI design assistant chat panel (task 11.1).
@@ -32,25 +42,22 @@ import { useAssistantDesign } from "./useAssistant";
  * (`setArtifactFromAssistant`, which marks the store dirty so the user reviews
  * on the canvas and then clicks the existing Save). Provider + model are chosen
  * per request in the panel header; provider errors come back as assistant turns.
+ *
+ * Task 11.5: the conversation, provider/model choice, and unsent draft live in
+ * the in-memory {@link useAssistantChatStore}, keyed by config id, so closing
+ * and reopening the panel (or navigating within the app) keeps them; a page
+ * reload clears them. "New chat" clears the current config's history.
  */
-
-/** A rendered chat turn: a plain message, or an assistant proposal card. */
-type ChatTurn =
-  | { kind: "message"; role: "user" | "assistant"; content: string }
-  | {
-      kind: "proposal";
-      message: string;
-      artifact: JsonObject;
-      underDevelopment: string[];
-    };
-
-export function AssistantChat() {
+export function AssistantChat({ configId }: { configId?: number | null }) {
   const [open, setOpen] = useState(false);
+  // Fall back to the config loaded in the designer store.
+  const storeConfigId = useDesignerStore((s) => s.configId);
+  const key = chatKey(configId !== undefined ? configId : storeConfigId);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {open ? (
-        <ChatPanel onClose={() => setOpen(false)} />
+        <ChatPanel chatKey={key} onClose={() => setOpen(false)} />
       ) : (
         <Button
           type="button"
@@ -67,7 +74,13 @@ export function AssistantChat() {
   );
 }
 
-function ChatPanel({ onClose }: { onClose: () => void }) {
+function ChatPanel({
+  chatKey: key,
+  onClose,
+}: {
+  chatKey: string;
+  onClose: () => void;
+}) {
   const artifact = useDesignerStore((s) => s.artifact);
   const setArtifactFromAssistant = useDesignerStore(
     (s) => s.setArtifactFromAssistant,
@@ -79,21 +92,24 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
     [providersQuery.data],
   );
 
-  const [providerId, setProviderId] = useState<number | null>(null);
-  const [model, setModel] = useState<string>("");
-  const [input, setInput] = useState("");
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  // Session state (survives the panel unmounting; see assistantChatStore).
+  const session = useAssistantChatStore((s) => s.sessions[key] ?? EMPTY_SESSION);
+  const patchSession = useAssistantChatStore((s) => s.patchSession);
+  const beginTurn = useAssistantChatStore((s) => s.beginTurn);
+  const markApplied = useAssistantChatStore((s) => s.markApplied);
+  const clearChat = useAssistantChatStore((s) => s.clearChat);
+  const { turns, providerId, model, draft: input, pending } = session;
 
-  const mutation = useAssistantDesign();
+  const mutation = useAssistantChatSend();
 
-  // Default the provider/model selection to the first configured provider.
+  // Default the provider/model selection to the first configured provider
+  // when nothing is chosen yet (or the stored provider no longer exists).
   useEffect(() => {
-    if (providerId === null && providers.length > 0) {
-      const first = providers[0];
-      setProviderId(first.id);
-      setModel(first.models[0] ?? "");
-    }
-  }, [providers, providerId]);
+    if (providers.length === 0) return;
+    if (providerId !== null && providers.some((p) => p.id === providerId)) return;
+    const first = providers[0];
+    patchSession(key, { providerId: first.id, model: first.models[0] ?? "" });
+  }, [providers, providerId, key, patchSession]);
 
   const selectedProvider: ProviderResponse | undefined = providers.find(
     (p) => p.id === providerId,
@@ -107,70 +123,36 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
     if (el && typeof el.scrollTo === "function") {
       el.scrollTo({ top: el.scrollHeight });
     }
-  }, [turns, mutation.isPending]);
-
-  // The conversation history sent to the backend: only plain message turns
-  // (a proposal's artifact is state, not something to replay as chat text).
-  const historyFor = (current: ChatTurn[]): AssistantMessage[] =>
-    current
-      .filter((t): t is Extract<ChatTurn, { kind: "message" }> => t.kind === "message")
-      .map((t) => ({ role: t.role, content: t.content }));
+  }, [turns, pending]);
 
   const canSend =
     providerId !== null &&
     model.trim().length > 0 &&
     input.trim().length > 0 &&
-    !mutation.isPending;
+    !pending;
 
   const handleSend = () => {
-    if (providerId === null || !model || !input.trim()) return;
+    if (providerId === null || !model || !input.trim() || pending) return;
     const message = input.trim();
-    const nextTurns: ChatTurn[] = [
-      ...turns,
-      { kind: "message", role: "user", content: message },
-    ];
-    setTurns(nextTurns);
-    setInput("");
+    // History = the turns BEFORE this message (plain messages only; a
+    // proposal's artifact is state, not something to replay as chat text).
+    const history = historyFor(turns);
+    const generation = session.generation;
+    beginTurn(key, message);
 
-    mutation.mutate(
-      {
+    // Replies are appended by the mutation-level handlers, keyed by the
+    // session captured here, so they land even if the panel is closed.
+    mutation.mutate({
+      chatKey: key,
+      generation,
+      body: {
         provider_id: providerId,
         model,
         message,
-        history: historyFor(turns),
+        history,
         artifact: artifact as unknown as JsonObject | null,
       },
-      {
-        onSuccess: (res: AssistantDesignResponse) => {
-          setTurns((prev) =>
-            res.mode === "proposal" && res.artifact
-              ? [
-                  ...prev,
-                  {
-                    kind: "proposal",
-                    message: res.message,
-                    artifact: res.artifact,
-                    underDevelopment: res.under_development,
-                  },
-                ]
-              : [
-                  ...prev,
-                  { kind: "message", role: "assistant", content: res.message },
-                ],
-          );
-        },
-        onError: (err: Error) => {
-          setTurns((prev) => [
-            ...prev,
-            {
-              kind: "message",
-              role: "assistant",
-              content: `The assistant request failed: ${err.message}`,
-            },
-          ]);
-        },
-      },
-    );
+    });
   };
 
   return (
@@ -187,16 +169,32 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
             <Sparkles className="size-4 text-primary" aria-hidden />
             Design assistant
           </span>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label="Close the assistant"
-            onClick={onClose}
-          >
-            <X className="size-4" aria-hidden />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label="New chat"
+              title="New chat — clear this configuration's conversation"
+              data-testid="assistant-new-chat"
+              disabled={turns.length === 0 && !pending && input.length === 0}
+              onClick={() => clearChat(key)}
+            >
+              <MessageSquarePlus className="size-4" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label="Close the assistant"
+              title="Close — the conversation is kept until you reload the page"
+              onClick={onClose}
+            >
+              <X className="size-4" aria-hidden />
+            </Button>
+          </div>
         </div>
         <div className="flex gap-2">
           <label className="flex-1 text-xs">
@@ -207,9 +205,8 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
               value={providerId ?? ""}
               onChange={(e) => {
                 const id = Number(e.target.value);
-                setProviderId(id);
                 const p = providers.find((x) => x.id === id);
-                setModel(p?.models[0] ?? "");
+                patchSession(key, { providerId: id, model: p?.models[0] ?? "" });
               }}
             >
               {providers.length === 0 ? (
@@ -228,7 +225,7 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
               aria-label="Model"
               className="h-8 text-xs"
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={(e) => patchSession(key, { model: e.target.value })}
               disabled={modelOptions.length === 0}
             >
               {modelOptions.length === 0 ? (
@@ -264,14 +261,17 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
             <ProposalCard
               key={i}
               turn={turn}
-              onApply={() => setArtifactFromAssistant(turn.artifact)}
+              onApply={() => {
+                setArtifactFromAssistant(turn.artifact);
+                markApplied(key, i);
+              }}
             />
           ) : (
             <MessageBubble key={i} role={turn.role} content={turn.content} />
           ),
         )}
 
-        {mutation.isPending ? (
+        {pending ? (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
             Thinking…
@@ -286,7 +286,7 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
           placeholder="e.g. Two debaters arguing for and against, three rounds, a judge decides."
           rows={2}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => patchSession(key, { draft: e.target.value })}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -347,7 +347,7 @@ function ProposalCard({
   turn: Extract<ChatTurn, { kind: "proposal" }>;
   onApply: () => void;
 }) {
-  const [applied, setApplied] = useState(false);
+  const applied = turn.applied === true;
   const name =
     typeof turn.artifact.name === "string" ? turn.artifact.name : "Configuration";
 
@@ -391,10 +391,7 @@ function ProposalCard({
         type="button"
         size="sm"
         data-testid="assistant-apply"
-        onClick={() => {
-          onApply();
-          setApplied(true);
-        }}
+        onClick={onApply}
       >
         {applied ? "Applied — review on canvas" : "Apply to canvas"}
       </Button>

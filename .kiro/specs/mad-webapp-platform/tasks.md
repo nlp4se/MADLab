@@ -365,6 +365,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
     Start/End, edge bends), ignored by the engine, saved with the config and kept on export/import.
   - Tests: geometry helpers, bend/store actions, layout persistence round trip, schema/export.
   - _Requirements: 4.1, 4.3, 6.1, 6.2, 6.4, 6.8_
+
+- [x] 11.5 Session-persistent assistant chat and right-click node delete
+  - Assistant chat history lives in an in-memory (not persisted) store keyed by config id: closing and
+    reopening the panel, or navigating inside the app, keeps the conversation and the provider/model
+    choice so the user can continue; a pending reply still lands if the panel was closed. A page
+    reload or closing the window clears it. A "New chat" action clears the current config's history.
+  - Canvas: right-click a participant node opens the same portalled context menu with Delete
+    (`removeNode`, which also removes incident edges and Start/End connectors). Start/End are
+    synthetic and always present, so they get no Delete. Menu closes on outside click, Escape, pane
+    click, or canvas move.
+  - Tests: history survives close/reopen and is per config; New chat clears it; node context menu
+    deletes the node and its edges; no menu for Start/End.
+  - _Requirements: 6.1, 6.2, 6.8, 12.2_
 ```
 
 ---

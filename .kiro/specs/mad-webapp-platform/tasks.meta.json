@@ -942,6 +942,23 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793792043916
       }
+    ],
+    "11.5 Session-persistent assistant chat and right-click node delete": [
+      {
+        "executionId": "b37fde3e-789e-4d18-8a70-dd178ba14cf1",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793792450921
+      },
+      {
+        "executionId": "b37fde3e-789e-4d18-8a70-dd178ba14cf1",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793792453578
+      },
+      {
+        "executionId": "b37fde3e-789e-4d18-8a70-dd178ba14cf1",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793792868840
+      }
     ]
   }
 }

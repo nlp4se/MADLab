@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssistantDesignResponse, ProviderResponse } from "@/api";
 
 import { AssistantChat } from "./AssistantChat";
+import { useAssistantChatStore } from "./assistantChatStore";
 import { useDesignerStore } from "./designerStore";
 
 /* ------------------------------- fixtures -------------------------------- */
@@ -58,6 +59,8 @@ function installFetch(options: {
   providers?: ProviderResponse[];
   design: AssistantDesignResponse;
   onDesign?: (body: unknown) => void;
+  /** When set, `/assistant/design` waits for it before replying. */
+  gate?: Promise<void>;
 }) {
   const providers = options.providers ?? [makeProvider()];
   const fetchMock = vi.fn(
@@ -75,6 +78,7 @@ function installFetch(options: {
       if (url.endsWith("/providers") && method === "GET") return json(providers);
       if (url.endsWith("/assistant/design") && method === "POST") {
         options.onDesign?.(body);
+        if (options.gate) await options.gate;
         return json(options.design);
       }
       return json({ detail: `unhandled ${method} ${url}` }, 500);
@@ -84,15 +88,39 @@ function installFetch(options: {
   return fetchMock;
 }
 
-function renderChat() {
+function renderChat(props: { configId?: number | null } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const ui = (p: { configId?: number | null }) => (
     <QueryClientProvider client={client}>
-      <AssistantChat />
-    </QueryClientProvider>,
+      <AssistantChat {...p} />
+    </QueryClientProvider>
   );
+  const result = render(ui(props));
+  return {
+    ...result,
+    /** Re-render with a different config id (same QueryClient). */
+    rerenderWith: (p: { configId?: number | null }) => result.rerender(ui(p)),
+  };
+}
+
+const QUESTION: AssistantDesignResponse = {
+  mode: "question",
+  message: "How many debaters, and who decides the winner?",
+  artifact: null,
+  under_development: [],
+};
+
+/** Open the panel and wait until the provider selector is populated. */
+async function openPanel(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("assistant-open"));
+  await waitFor(() => expect(screen.getByLabelText("Provider")).toHaveValue("1"));
+}
+
+async function sendMessage(user: ReturnType<typeof userEvent.setup>, text: string) {
+  await user.type(screen.getByLabelText(/Message the design assistant/i), text);
+  await user.click(screen.getByTestId("assistant-send"));
 }
 
 /* --------------------------------- tests --------------------------------- */
@@ -108,6 +136,8 @@ describe("AssistantChat", () => {
       dirty: false,
       validationErrors: [],
     });
+    // The chat store is in-memory module state: reset it between tests.
+    useAssistantChatStore.getState().resetAll();
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -224,5 +254,158 @@ describe("AssistantChat", () => {
     expect((sent!.artifact as Record<string, unknown>).name).toBe(
       "Two-debater majority vote",
     );
+  });
+});
+
+describe("AssistantChat session persistence (task 11.5)", () => {
+  beforeEach(() => {
+    useDesignerStore.setState({
+      configId: null,
+      artifact: null,
+      layout: {},
+      selection: null,
+      dirty: false,
+      validationErrors: [],
+    });
+    useAssistantChatStore.getState().resetAll();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("keeps history, model choice and draft across close/reopen and continues", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    installFetch({
+      design: QUESTION,
+      onDesign: (b) => bodies.push(b as Record<string, unknown>),
+    });
+    const user = userEvent.setup();
+    renderChat({ configId: 5 });
+
+    await openPanel(user);
+    await user.selectOptions(screen.getByLabelText("Model"), "gpt-4o-mini");
+    await sendMessage(user, "I want a debate");
+    expect(await screen.findByText(/How many debaters/i)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Message the design assistant/i), "half-typed");
+
+    // Close: the panel (and its component state) unmounts.
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+    expect(screen.queryByTestId("assistant-panel")).toBeNull();
+
+    // Reopen: the conversation, model choice and draft are still there.
+    await user.click(screen.getByTestId("assistant-open"));
+    expect(screen.getByText("I want a debate")).toBeInTheDocument();
+    expect(screen.getByText(/How many debaters/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-4o-mini");
+    expect(screen.getByLabelText(/Message the design assistant/i)).toHaveValue("half-typed");
+
+    // Continue: the earlier turns are sent as history.
+    await user.clear(screen.getByLabelText(/Message the design assistant/i));
+    await sendMessage(user, "Two debaters");
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      model: "gpt-4o-mini",
+      message: "Two debaters",
+      history: [
+        { role: "user", content: "I want a debate" },
+        { role: "assistant", content: QUESTION.message },
+      ],
+    });
+  });
+
+  it("lands a pending reply even if the panel was closed", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    installFetch({ design: QUESTION, gate });
+    const user = userEvent.setup();
+    renderChat({ configId: 5 });
+
+    await openPanel(user);
+    await sendMessage(user, "I want a debate");
+    expect(await screen.findByText(/Thinking/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+    release();
+    await waitFor(() =>
+      expect(useAssistantChatStore.getState().sessions["5"]?.turns).toHaveLength(2),
+    );
+
+    await user.click(screen.getByTestId("assistant-open"));
+    expect(screen.getByText(/How many debaters/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Thinking/)).toBeNull();
+  });
+
+  it("keeps a separate conversation per config", async () => {
+    installFetch({ design: QUESTION });
+    const user = userEvent.setup();
+    const { rerenderWith } = renderChat({ configId: 1 });
+
+    await openPanel(user);
+    await sendMessage(user, "Config one chat");
+    expect(await screen.findByText(/How many debaters/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+
+    // Another config: empty conversation.
+    rerenderWith({ configId: 2 });
+    await openPanel(user);
+    expect(screen.queryByText("Config one chat")).toBeNull();
+    expect(screen.queryAllByTestId("assistant-turn-user")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+
+    // Back to the first config: its history is intact.
+    rerenderWith({ configId: 1 });
+    await user.click(screen.getByTestId("assistant-open"));
+    expect(screen.getByText("Config one chat")).toBeInTheDocument();
+  });
+
+  it("New chat clears the current config's history only", async () => {
+    installFetch({ design: QUESTION });
+    const user = userEvent.setup();
+    const { rerenderWith } = renderChat({ configId: 1 });
+
+    await openPanel(user);
+    await sendMessage(user, "Config one chat");
+    expect(await screen.findByText(/How many debaters/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+
+    rerenderWith({ configId: 2 });
+    await openPanel(user);
+    await sendMessage(user, "Config two chat");
+    expect(await screen.findByText(/How many debaters/i)).toBeInTheDocument();
+
+    const newChat = screen.getByRole("button", { name: "New chat" });
+    expect(newChat).toHaveAttribute("title");
+    await user.click(newChat);
+    expect(screen.queryByText("Config two chat")).toBeNull();
+    expect(screen.queryAllByTestId("assistant-turn-assistant")).toHaveLength(0);
+    // The provider/model choice is kept.
+    expect(screen.getByLabelText("Provider")).toHaveValue("1");
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+
+    rerenderWith({ configId: 1 });
+    await user.click(screen.getByTestId("assistant-open"));
+    expect(screen.getByText("Config one chat")).toBeInTheDocument();
+  });
+
+  it("keeps a proposal's Applied state across close/reopen", async () => {
+    installFetch({
+      design: {
+        mode: "proposal",
+        message: "Here you go.",
+        artifact: validArtifact(),
+        under_development: [],
+      },
+    });
+    const user = userEvent.setup();
+    renderChat({ configId: 3 });
+
+    await openPanel(user);
+    await sendMessage(user, "Design it");
+    await user.click(await screen.findByTestId("assistant-apply"));
+    expect(screen.getByTestId("assistant-apply")).toHaveTextContent(/Applied/);
+
+    await user.click(screen.getByRole("button", { name: "Close the assistant" }));
+    await user.click(screen.getByTestId("assistant-open"));
+    expect(screen.getByTestId("assistant-apply")).toHaveTextContent(/Applied/);
   });
 });

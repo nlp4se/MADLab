@@ -35,7 +35,7 @@ import {
 import { FloatingEdge } from "./FloatingEdge";
 import { resolveConnection } from "./ioNodes";
 import { AssistantChat } from "./AssistantChat";
-import { EdgeContextMenu, useEdgeContextMenu } from "./EdgeContextMenu";
+import { CanvasContextMenu, useCanvasContextMenu } from "./EdgeContextMenu";
 import { useDesignerStore, withUiLayout } from "./designerStore";
 import { topologyLabel } from "./topology";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
@@ -71,8 +71,9 @@ function nodeIdAtEvent(event: MouseEvent | TouchEvent): string | null {
  * enters and the final output leaves. The Start/End nodes themselves are not in
  * the artifact (their positions are UI-only), but their connectors are: they
  * persist as `interaction.topology.entry_nodes` / `exit_nodes` (task 11.2).
- * Any edge can be deleted via right-click -> Delete, and connectors can be
- * re-added by dragging Start -> participant or participant -> End.
+ * Any edge or participant node can be deleted via right-click -> Delete
+ * (task 11.5), and connectors can be re-added by dragging Start -> participant
+ * or participant -> End.
  */
 export function DesignerPage() {
   const params = useParams<{ configId?: string }>();
@@ -173,9 +174,14 @@ function DesignerCanvas({ configId }: { configId: number }) {
     [artifact, selectedEdgeId, edgeBends],
   );
 
-  // Right-click on any edge (participant edge or Start/End connector).
-  const { menu: edgeMenu, onEdgeContextMenu, close: closeEdgeMenu } =
-    useEdgeContextMenu();
+  // Right-click on any edge (participant edge or Start/End connector) or on a
+  // participant node (Start/End get no menu). One shared state = one menu.
+  const {
+    menu: canvasMenu,
+    onEdgeContextMenu,
+    onNodeContextMenu,
+    close: closeCanvasMenu,
+  } = useCanvasContextMenu();
 
   // Canvas gestures -> store mutations (canvas -> artifact). Synthetic Start/End
   // ids are ignored so they can never mutate the artifact.
@@ -267,9 +273,9 @@ function DesignerCanvas({ configId }: { configId: number }) {
   );
 
   const onPaneClick = useCallback(() => {
-    closeEdgeMenu();
+    closeCanvasMenu();
     setSelection(null);
-  }, [closeEdgeMenu, setSelection]);
+  }, [closeCanvasMenu, setSelection]);
 
   // Apply a topology template, warning first if an existing graph would be
   // overwritten (Req 6.5 — initializing a structure replaces the current edges).
@@ -391,15 +397,16 @@ function DesignerCanvas({ configId }: { configId: number }) {
             onConnectEnd={onConnectEnd}
             onPaneClick={onPaneClick}
             onEdgeContextMenu={onEdgeContextMenu}
-            onMoveStart={closeEdgeMenu}
+            onNodeContextMenu={onNodeContextMenu}
+            onMoveStart={closeCanvasMenu}
             fitView
             proOptions={{ hideAttribution: true }}
           >
             <Background />
             <Controls />
           </ReactFlow>
-          <EdgeContextMenu menu={edgeMenu} onClose={closeEdgeMenu} />
-          <AssistantChat />
+          <CanvasContextMenu menu={canvasMenu} onClose={closeCanvasMenu} />
+          <AssistantChat configId={configId} />
         </div>
         <Inspector />
       </div>
