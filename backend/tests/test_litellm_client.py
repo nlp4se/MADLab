@@ -353,3 +353,32 @@ def test_module_imports_without_network_or_credentials():
 
     client = mod.LiteLLMClient(kind="deepseek", api_key="k")
     assert client.kind == "deepseek"
+
+
+def test_completion_drops_unsupported_params_by_default(monkeypatch):
+    """Reasoning models reject a non-default temperature; drop_params avoids that.
+
+    The wrapper must ask LiteLLM to drop unsupported params unless the caller
+    explicitly overrides it.
+    """
+    import sys
+    import types
+
+    from mad.providers import litellm_client as mod
+
+    captured = {}
+    fake = types.ModuleType("litellm")
+
+    def _completion(**kwargs):
+        captured.update(kwargs)
+        return {"choices": []}
+
+    fake.completion = _completion
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+
+    mod._litellm_completion(model="gpt-x", messages=[], temperature=0.1)
+    assert captured["drop_params"] is True
+
+    captured.clear()
+    mod._litellm_completion(model="gpt-x", messages=[], drop_params=False)
+    assert captured["drop_params"] is False

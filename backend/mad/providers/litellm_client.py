@@ -1,4 +1,4 @@
-"""LiteLLM-backed :class:`~mad.providers.base.ModelClient` implementation.
+﻿"""LiteLLM-backed :class:`~mad.providers.base.ModelClient` implementation.
 
 This adapter routes a single ``complete`` call to any supported provider through
 `LiteLLM <https://docs.litellm.ai/>`_:
@@ -468,6 +468,10 @@ def _litellm_completion(**kwargs: Any) -> Any:
             "The 'litellm' package is required to make model calls but could not "
             f"be imported: {exc}. Install it with `pip install litellm`."
         ) from exc
+    # Drop params a given model does not accept instead of failing the call.
+    # Reasoning models (e.g. some OpenAI ones) reject a non-default temperature;
+    # the engine always sends one, so without this such models would always fail.
+    kwargs.setdefault("drop_params", True)
     return litellm.completion(**kwargs)
 
 
