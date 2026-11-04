@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -76,6 +76,13 @@ export function DropdownMenuContent({
 }) {
   const ctx = React.useContext(MenuContext);
   if (!ctx?.open) return null;
+  // Stop pointer/mouse events from reaching anything underneath the menu. When
+  // the menu overlays a React Flow canvas (the designer toolbar), RF's pane
+  // listeners would otherwise capture the press and the item click would be
+  // lost; keeping the events inside the menu makes items clickable there. The
+  // dropdown's own outside-click close uses a document listener, so trapping
+  // events *inside* the menu does not affect closing on a true outside click.
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <div
       role="menu"
@@ -84,6 +91,9 @@ export function DropdownMenuContent({
         align === "end" ? "right-0" : "left-0",
         className,
       )}
+      onMouseDown={stop}
+      onPointerDown={stop}
+      onClick={stop}
     >
       {children}
     </div>
