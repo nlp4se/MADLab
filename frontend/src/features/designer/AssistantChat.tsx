@@ -52,7 +52,11 @@ export function AssistantChat({ configId }: { configId?: number | null }) {
   const [open, setOpen] = useState(false);
   // Fall back to the config loaded in the designer store.
   const storeConfigId = useDesignerStore((s) => s.configId);
-  const key = chatKey(configId !== undefined ? configId : storeConfigId);
+  // A new, unsaved config (task 11.15) has its own draft session, which moves
+  // to the config id on the first Save.
+  const draftKey = useDesignerStore((s) => s.draftKey);
+  const id = configId !== undefined ? configId : storeConfigId;
+  const key = id == null && draftKey ? draftKey : chatKey(id);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">

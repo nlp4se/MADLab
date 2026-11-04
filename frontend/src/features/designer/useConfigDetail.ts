@@ -7,6 +7,7 @@ import {
 
 import {
   configsApi,
+  type ConfigCreateRequest,
   type ConfigDetail,
   type ConfigUpdateRequest,
   type JsonObject,
@@ -42,6 +43,22 @@ export function useUpdateConfig(id: number | null) {
     onSuccess: (updated) => {
       qc.setQueryData(configDetailQueryKey(updated.id), updated);
       void qc.invalidateQueries({ queryKey: CONFIGS_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * First Save of a new, unsaved configuration (task 11.15): POST
+ * /api/configs with the artifact. The created detail primes the detail cache,
+ * so switching the URL to `/designer/<id>` needs no extra load.
+ */
+export function useCreateConfigFromDesigner() {
+  const qc = useQueryClient();
+  return useMutation<ConfigDetail, Error, ConfigCreateRequest>({
+    mutationFn: (body) => configsApi.create(body),
+    onSuccess: (created) => {
+      qc.setQueryData(configDetailQueryKey(created.id), created);
+      void qc.invalidateQueries({ queryKey: CONFIGS_QUERY_KEY, exact: true });
     },
   });
 }

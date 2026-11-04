@@ -23,15 +23,14 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <Navigate to={DEFAULT_ROUTE} replace /> },
+      // NAV_ITEMS includes the designer as `designer/:configId?`: no id opens
+      // a new, unsaved configuration (task 11.15), an id opens that config
+      // (the Configurations list navigates there on open/create/copy).
       ...NAV_ITEMS.map((item) => ({
-        path: item.path.replace(/^\//, ""),
+        path: (item.routePath ?? item.path).replace(/^\//, ""),
         element: item.element,
       })),
-      // Open a specific configuration in the visual designer. The
-      // Configurations list (task 8.2) navigates here on open/create/copy; the
-      // designer canvas itself lands in tasks 8.3/8.4. `/configs/:id` is kept
-      // as an alias so either path resolves to the same editor.
-      { path: "designer/:configId", element: <DesignerPage /> },
+      // `/configs/:id` is kept as an alias resolving to the same editor.
       { path: "configs/:configId", element: <DesignerPage /> },
       // Per-execution detail view + live progress + transcript viewer (task
       // 8.7). `/executions` (the history list) is generated from NAV_ITEMS.

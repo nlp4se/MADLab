@@ -23,6 +23,7 @@
 import { create } from "zustand";
 
 import {
+  blankArtifact,
   normalizeArtifact,
   type AgreementArtifact,
   type ApplicableTopology,
@@ -83,6 +84,9 @@ export type EdgeBendMap = Record<string, XYPosition>;
 /** The synthetic Start/End sentinel ids that may carry a stored position. */
 const SENTINEL_IDS = [START_NODE_ID, END_NODE_ID];
 
+/** Makes every new draft's `draftKey` unique within the page session. */
+let draftCounter = 0;
+
 /**
  * A selected canvas element (participant node or edge), the synthetic Start
  * node (`input`: it opens the Input panel, task 11.10; never deletable), or
@@ -112,9 +116,21 @@ export interface DesignerState {
   dirty: boolean;
   /** Field errors from the last server-side validation (Req 7.3), if any. */
   validationErrors: FieldError[];
+  /**
+   * Set while a NEW, not-yet-saved configuration is open (`/designer`, task
+   * 11.15): a unique key for its assistant chat session (moved to the config
+   * id on the first Save). Null for a loaded (persisted) config.
+   */
+  draftKey: string | null;
 
   /** Replace the whole artifact (e.g. on load or after a save round-trip). */
   loadArtifact: (configId: number, raw: Record<string, unknown>) => void;
+  /**
+   * Open a new, unsaved configuration (task 11.15): the backend's blank
+   * artifact (starter `{{input}}` input), auto layout, no config id, and
+   * `dirty` so Save is enabled (the first Save creates it).
+   */
+  newDraft: () => void;
   /**
    * Replace the artifact from an AI-assistant proposal (task 11.1).
    *
@@ -255,6 +271,8 @@ export interface DesignerState {
   setSelection: (selection: Selection) => void;
   /** Mark the artifact as saved (clears `dirty` and validation errors). */
   markSaved: () => void;
+  /** The first Save of a new config created it with `configId` (task 11.15). */
+  markCreated: (configId: number) => void;
 }
 
 /** Synthetic, stable id for an edge derived from its endpoints. */
@@ -302,6 +320,24 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   selection: null,
   dirty: false,
   validationErrors: [],
+  draftKey: null,
+
+  newDraft: () => {
+    const artifact = blankArtifact();
+    const seeded = seedLayout(artifact, null, SENTINEL_IDS);
+    draftCounter += 1;
+    set({
+      configId: null,
+      artifact,
+      layout: seeded.layout,
+      edgeBends: seeded.bends ?? {},
+      selection: null,
+      // A new config is an unsaved edit: Save is enabled from the start.
+      dirty: true,
+      validationErrors: [],
+      draftKey: `unsaved:${Date.now().toString(36)}-${draftCounter}`,
+    });
+  },
 
   loadArtifact: (configId, raw) => {
     const artifact = normalizeArtifact(raw);
@@ -321,6 +357,7 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       selection: null,
       dirty: false,
       validationErrors: [],
+      draftKey: null,
     });
   },
 
@@ -798,6 +835,10 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   setSelection: (selection) => set({ selection }),
 
   markSaved: () => set({ dirty: false, validationErrors: [] }),
+
+  // Keeps `draftKey` until the route switches to the new id and the created
+  // config is loaded (`loadArtifact` clears it), so the canvas stays mounted.
+  markCreated: (configId) => set({ configId, dirty: false, validationErrors: [] }),
 }));
 
 /** Replace `participants` via `fn` and mark dirty (no-op without an artifact). */

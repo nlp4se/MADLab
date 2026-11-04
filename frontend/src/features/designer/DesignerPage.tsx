@@ -1,5 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import ReactFlow, {
   Background,
@@ -37,6 +37,8 @@ import {
 import { FloatingEdge } from "./FloatingEdge";
 import { resolveConnection } from "./ioNodes";
 import { AssistantChat } from "./AssistantChat";
+import { chatKey, useAssistantChatStore } from "./assistantChatStore";
+import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
 import { CanvasContextMenu, useCanvasContextMenu } from "./EdgeContextMenu";
 import { useDesignerStore, withUiLayout } from "./designerStore";
 import type { NodeSizeMap } from "./layout";
@@ -45,7 +47,11 @@ import {
   confirmApplyTopology,
   topologyStatus,
 } from "./interactionScope";
-import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
+import {
+  useConfigDetailQuery,
+  useCreateConfigFromDesigner,
+  useUpdateConfig,
+} from "./useConfigDetail";
 
 /** Register custom node types once (stable reference). */
 const NODE_TYPES = {
@@ -85,25 +91,53 @@ function nodeIdAtEvent(event: MouseEvent | TouchEvent): string | null {
 export function DesignerPage() {
   const params = useParams<{ configId?: string }>();
   const configId = params.configId ? Number(params.configId) : null;
+  const isNew = configId === null;
 
   const { data, isLoading, isError, error } = useConfigDetailQuery(configId);
 
   const loadArtifact = useDesignerStore((s) => s.loadArtifact);
+  const newDraft = useDesignerStore((s) => s.newDraft);
   const artifact = useDesignerStore((s) => s.artifact);
+  const storeConfigId = useDesignerStore((s) => s.configId);
+  const storeDraftKey = useDesignerStore((s) => s.draftKey);
 
   useEffect(() => {
     if (data) loadArtifact(data.id, data.artifact);
   }, [data, loadArtifact]);
 
-  if (configId === null) {
+  // `/designer` without an id opens a new, unsaved configuration (task
+  // 11.15). The draft opened for THIS visit is tracked so a stale draft (or
+  // config) left in the store never flashes on the canvas.
+  const [openedDraftKey, setOpenedDraftKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isNew) return;
+    newDraft();
+    setOpenedDraftKey(useDesignerStore.getState().draftKey);
+  }, [isNew, newDraft]);
+
+  if (isNew) {
+    const ready =
+      artifact !== null && openedDraftKey !== null && storeDraftKey === openedDraftKey;
+    if (!ready) {
+      return (
+        <div className="flex h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          Opening a new configuration…
+        </div>
+      );
+    }
+    // Same element shape as the loaded branch below, so the first Save's
+    // switch to `/designer/<id>` keeps the canvas mounted.
     return (
-      <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-        Open a configuration from the Configurations list to design it.
-      </div>
+      <ReactFlowProvider>
+        <DesignerCanvas configId={storeConfigId} />
+      </ReactFlowProvider>
     );
   }
 
-  if (isLoading || (data && !artifact)) {
+  // Wait until the store holds THIS config (not a draft or another config
+  // left from an earlier visit).
+  if (isLoading || (data && (!artifact || storeConfigId !== data.id))) {
     return (
       <div className="flex h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -130,7 +164,12 @@ export function DesignerPage() {
   );
 }
 
-function DesignerCanvas({ configId }: { configId: number }) {
+/**
+ * The designer canvas + toolbar + inspector. `configId` is null for a new,
+ * unsaved configuration (task 11.15): its first Save POSTs the artifact and
+ * switches the URL to `/designer/<id>`.
+ */
+function DesignerCanvas({ configId }: { configId: number | null }) {
   const artifact = useDesignerStore((s) => s.artifact);
   const layout = useDesignerStore((s) => s.layout);
   const edgeBends = useDesignerStore((s) => s.edgeBends);
@@ -162,8 +201,14 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const setValidationErrors = useDesignerStore((s) => s.setValidationErrors);
   const validationErrors = useDesignerStore((s) => s.validationErrors);
 
+  const markCreated = useDesignerStore((s) => s.markCreated);
+
   const { isUnderDevelopment, getValue } = useTaxonomy();
   const updateConfig = useUpdateConfig(configId);
+  const createConfig = useCreateConfigFromDesigner();
+  const navigate = useNavigate();
+  const isNew = configId === null;
+  const saveMutation = isNew ? createConfig : updateConfig;
 
   const selectedNodeId = selection?.kind === "node" ? selection.id : null;
   const selectedEdgeId = selection?.kind === "edge" ? selection.id : null;
@@ -359,8 +404,36 @@ function DesignerCanvas({ configId }: { configId: number }) {
     } catch {
       /* fall through; the save itself will surface any error */
     }
-    updateConfig.mutate(body, { onSuccess: () => markSaved() });
-  }, [artifact, layout, edgeBends, updateConfig, markSaved, setValidationErrors]);
+    if (configId !== null) {
+      updateConfig.mutate(body, { onSuccess: () => markSaved() });
+      return;
+    }
+    // First Save of a new config: create it, move the draft's assistant chat
+    // to the new id, then switch the URL (replace: the unsaved `/designer`
+    // entry is not something to go Back to). The store keeps the canvas
+    // layout; the created detail (with the saved `ui`) primes the cache.
+    createConfig.mutate(body, {
+      onSuccess: (created) => {
+        const draftKey = useDesignerStore.getState().draftKey;
+        if (draftKey) {
+          useAssistantChatStore.getState().moveSession(draftKey, chatKey(created.id));
+        }
+        markCreated(created.id);
+        navigate(`/designer/${created.id}`, { replace: true });
+      },
+    });
+  }, [
+    artifact,
+    layout,
+    edgeBends,
+    configId,
+    updateConfig,
+    createConfig,
+    markSaved,
+    markCreated,
+    navigate,
+    setValidationErrors,
+  ]);
 
   const underDevSelections = useMemo(
     () => (artifact ? collectUnderDev(artifact, isUnderDevelopment, getValue) : []),
@@ -382,13 +455,15 @@ function DesignerCanvas({ configId }: { configId: number }) {
         onSave={handleSave}
         canDeleteSelection={selection?.kind === "node" || selection?.kind === "edge"}
         dirty={dirty}
-        saving={updateConfig.isPending}
+        saving={saveMutation.isPending}
+        isNew={isNew}
         topologyStatus={status}
       />
+      <UnsavedChangesGuard />
 
-      {updateConfig.isError ? (
+      {saveMutation.isError ? (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">
-          Save failed: {updateConfig.error.message}
+          Save failed: {saveMutation.error.message}
         </p>
       ) : null}
 

@@ -3,13 +3,11 @@ import { MessagesSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "@/routes";
-import { DIMENSION_ORDER, DIMENSION_THEMES } from "@/taxonomy/dimensions";
 
 /**
  * The base application shell: a fixed sidebar with primary navigation and a
- * scrollable content region fed by the active route (`<Outlet />`). The sidebar
- * also surfaces the three dimension colour identities (Reqs 6.6, 7.4) as a
- * legend so the colour language is visible from the first screen.
+ * scrollable content region fed by the active route (`<Outlet />`). The
+ * Designer link opens a new, unsaved configuration (`/designer`, task 11.15).
  */
 export function AppLayout() {
   return (
@@ -44,30 +42,13 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-
-        <div className="border-t px-5 py-4">
-          <div className="mb-2 text-xs font-medium text-muted-foreground">
-            Dimensions
-          </div>
-          <ul className="space-y-1.5">
-            {DIMENSION_ORDER.map((key) => {
-              const dim = DIMENSION_THEMES[key];
-              return (
-                <li key={key} className="flex items-center gap-2 text-xs">
-                  <span
-                    className={cn("inline-block size-2.5 rounded-full", dim.classes.bg)}
-                    aria-hidden
-                  />
-                  <dim.icon className={cn("size-3.5", dim.classes.text)} />
-                  <span>{dim.label}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      {/* `min-w-0`: as a flex item the content column would otherwise grow to
+          its widest child (long transcript lines, JSON blocks) and push the
+          page past the viewport; with it, wide content wraps or scrolls
+          inside its own card (task 11.15). */}
+      <main className="min-w-0 flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>

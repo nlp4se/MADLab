@@ -16,6 +16,7 @@
  * `layout` / `edgeBends` (see `layout.ts`); on Save they are written into the
  * optional, presentation-only `ui` field so a config reopens with its layout.
  */
+import { starterInputSpec } from "./inputEditor";
 
 export interface PersonaArtifact {
   background?: string | null;
@@ -192,6 +193,62 @@ export interface MADArtifact {
   ui?: UiLayoutArtifact | null;
   // Any additional fields the designer doesn't model are preserved by spreads.
   [key: string]: unknown;
+}
+
+/** Default name of a new configuration (matches the backend blank create). */
+export const NEW_CONFIG_NAME = "New configuration";
+
+/**
+ * The artifact of a NEW, not-yet-saved configuration (task 11.15): the same
+ * defaults the backend's blank create (`POST /api/configs` without an
+ * artifact) produces — no participants, the defaults-driven dimensions, and
+ * the starter `{{input}}` input labelled "Input". No `id` / `ui`: the backend
+ * assigns the id on create, and the canvas is auto-laid-out.
+ */
+export function blankArtifact(): MADArtifact {
+  return normalizeArtifact({
+    schema_version: "1.0",
+    name: NEW_CONFIG_NAME,
+    description: "",
+    participants: {
+      base_model_heterogeneity: "homogeneous",
+      persona_heterogeneity: "homogeneous",
+      persona_assignment: "unspecified",
+      nodes: [],
+      groups: [],
+    },
+    interaction: {
+      topology: {
+        adaptability: "static",
+        dynamic_policy: null,
+        structure: "fully_connected",
+        pattern: null,
+        edges: [],
+        entry_nodes: null,
+        exit_nodes: null,
+      },
+      protocol: {
+        mechanism: "sequential",
+        max_rounds: 1,
+        ordering: "fixed",
+        order: [],
+        phases: null,
+      },
+      format: {
+        syntax: "natural_language",
+        content: { strategy: "verbatim", metadata_signals: [], transform_ref: null },
+        memory: "short_term",
+      },
+    },
+    agreement: {
+      authority: "collective",
+      resolution: "majority_vote",
+      resolution_params: {},
+      output_schema: null,
+    },
+    input_spec: starterInputSpec(),
+    ui: null,
+  });
 }
 
 /** All canonical topology pattern keys (for the toolbar). */

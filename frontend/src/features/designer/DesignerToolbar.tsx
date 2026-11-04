@@ -37,6 +37,8 @@ export interface DesignerToolbarProps {
   canDeleteSelection: boolean;
   dirty: boolean;
   saving: boolean;
+  /** A new, never-saved configuration (task 11.15): Save creates it. */
+  isNew?: boolean;
   /**
    * The applied template vs the drawn edges (task 11.7): the Topology button
    * shows its label ("Chain" / "Custom (edited from Chain)") and, when the
@@ -74,6 +76,7 @@ export function DesignerToolbar({
   canDeleteSelection,
   dirty,
   saving,
+  isNew = false,
   topologyStatus,
 }: DesignerToolbarProps) {
   const reapply =
@@ -150,7 +153,11 @@ export function DesignerToolbar({
       </Button>
 
       <div className="ml-auto flex items-center gap-2">
-        {dirty ? (
+        {isNew ? (
+          <span className="text-xs text-muted-foreground" data-testid="designer-not-saved">
+            New configuration · not saved yet
+          </span>
+        ) : dirty ? (
           <span className="text-xs text-muted-foreground">Unsaved changes</span>
         ) : null}
         <Button size="sm" onClick={onSave} disabled={!dirty || saving}>

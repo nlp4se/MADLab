@@ -73,6 +73,12 @@ interface AssistantChatState {
   markApplied: (key: string, index: number) => void;
   /** "New chat": drop the history (keeps the provider/model choice). */
   clearChat: (key: string) => void;
+  /**
+   * Move a session to another key (task 11.15: a new config's draft session
+   * moves to its id on the first Save). Replies still in flight for `from`
+   * land in `to` (draft keys are unique, so the alias never misroutes).
+   */
+  moveSession: (from: string, to: string) => void;
   /** Drop every session (tests). */
   resetAll: () => void;
 }
@@ -82,8 +88,21 @@ export const useAssistantChatStore = create<AssistantChatState>((set, get) => {
   const write = (key: string, next: ChatSession) =>
     set((s) => ({ sessions: { ...s.sessions, [key]: next } }));
 
+  /** Moved sessions: old key -> new key (see `moveSession`). */
+  const aliases: Record<string, string> = {};
+  const resolve = (key: string): string => {
+    let k = key;
+    const seen = new Set<string>();
+    while (aliases[k] !== undefined && !seen.has(k)) {
+      seen.add(k);
+      k = aliases[k];
+    }
+    return k;
+  };
+
   /** Append a reply turn unless "New chat" happened since it was sent. */
-  const land = (key: string, generation: number, turn: ChatTurn) => {
+  const land = (sentKey: string, generation: number, turn: ChatTurn) => {
+    const key = resolve(sentKey);
     const cur = session(key);
     if (cur.generation !== generation) return;
     write(key, { ...cur, turns: [...cur.turns, turn], pending: false });
@@ -145,7 +164,22 @@ export const useAssistantChatStore = create<AssistantChatState>((set, get) => {
       });
     },
 
-    resetAll: () => set({ sessions: {} }),
+    moveSession: (from, to) => {
+      if (from === to) return;
+      aliases[from] = to;
+      const moved = get().sessions[from];
+      if (!moved) return;
+      set((s) => {
+        const { [from]: _removed, ...rest } = s.sessions;
+        void _removed;
+        return { sessions: { ...rest, [to]: moved } };
+      });
+    },
+
+    resetAll: () => {
+      for (const k of Object.keys(aliases)) delete aliases[k];
+      set({ sessions: {} });
+    },
   };
 });
 

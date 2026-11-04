@@ -1044,6 +1044,91 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793809057169
       }
+    ],
+    "11.11 Fix: every model call carries at least one user message": [
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809712700
+      },
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809720851
+      },
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809994843
+      }
+    ],
+    "11.12 Fix: the final decision renders as a pill-shaped blob for structured decisions": [
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809712875
+      },
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809995811
+      },
+      {
+        "executionId": "31b1cecb-a6d8-410a-920d-ec494a7b7b6e",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793810718681
+      }
+    ],
+    "11.13 Fix: the agreement output_schema is enforced consistently": [
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793810795474
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793810796250
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793812222308
+      }
+    ],
+    "11.14 Verify information flow to every participant": [
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793810795575
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793812222413
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793812909764
+      }
+    ],
+    "11.15 UI fixes: execution view overflow, Designer opens a new config, drop Dimensions legend": [
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793810795658
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793812910686
+      },
+      {
+        "executionId": "11ae3ae9-f3cb-4e25-93d4-b739d7203156",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814165325
+      }
     ]
   }
 }

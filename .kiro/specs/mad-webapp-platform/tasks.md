@@ -494,6 +494,74 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: name edit/validation/dirty/save, template parsing and label sync, preview, Start-node
     selection opens the panel, empty-template warnings, run-launcher fields from the edited spec.
   - _Requirements: 6.1, 6.3, 10.2, 12.2_
+
+- [x] 11.11 Fix: every model call carries at least one user message
+  - Bug: a first-round turn with no visible history sends only a system message. Anthropic rejects
+    it ("requires at least one non-system message"), so every Anthropic participant fails on its
+    first turn.
+  - Fix in the engine (provider-agnostic, one place): when the assembled message list has no
+    user/assistant message, append a user turn that asks the agent to act (e.g. state the task when
+    it has one, and ask for its contribution for the round). Do not rely on LiteLLM
+    `modify_params`. Judge and summarizer calls keep their current shape, but get the same
+    guarantee.
+  - Tests: first-round messages for entry and non-entry nodes, simultaneous rounds, an
+    Anthropic-style mock client that rejects system-only lists, and gold cases still pass.
+  - _Requirements: 9.1, 9.2, 9.5_
+
+- [x] 11.12 Fix: the final decision renders as a pill-shaped blob for structured decisions
+  - Bug (execution 3): with a judge `output_schema`, the decision is a parsed object, and the chat
+    replay (and the execution detail view) puts its whole JSON into a rounded-full Badge, which
+    renders as an orange ellipse over the text.
+  - Fix: derive a short decision label (the schema's single enum property, else a known label
+    key, else a short scalar) and show only that as the pill; show long text or objects as a
+    readable block (key/value list), with the raw JSON in the existing Structured disclosure. Same
+    helper for the replay, the execution detail view, and evaluation label extraction if that
+    path is affected.
+  - Tests: string, enum-object, multi-field object, long text, and undecided decisions in both views.
+  - _Requirements: 3.5, 11.2, 13.3_
+
+- [x] 11.13 Fix: the agreement output_schema is enforced consistently
+  - Bug: config 8 runs return different decision shapes. Its schema uses the OpenAI envelope
+    (`{name, description, schema}`); the engine validates against the envelope, so any object
+    passes, and the label lookup misses the enum property. The inner schema has no `required`.
+  - Investigate end to end: what the judge call sends per provider kind (LiteLLM
+    `response_format` / json_schema for OpenAI, Gemini, Anthropic), whether strict mode is
+    used, what comes back, and how `_parse_against_schema` validates. Use config 8's executions
+    (read-only) as evidence.
+  - Fix: one normalizer that unwraps the envelope (keeping name for providers that need it) and is
+    used for the provider request, validation, and label extraction. Validation enforces
+    `required` and `additionalProperties` when declared. The designer warns when a schema has no
+    `required` or allows extra properties, and offers to add them. A reply that fails validation
+    stays undecided (existing rule), with the reason shown.
+  - Data: mark the stuck execution 3 as failed (status + error note) via a one-off, backed-up,
+    targeted DB update approved by the user; leave other rows untouched.
+  - Tests: envelope and bare schemas, required/extra-property rejection, provider request payloads per
+    kind, label extraction from enveloped schemas, designer warning.
+  - _Requirements: 3.5, 9.1, 10.7_
+
+- [x] 11.14 Verify information flow to every participant
+  - Audit what each call actually receives, per protocol and topology: debaters see the other
+    debaters' arguments (per edges and rounds; sequential same-round visibility, simultaneous
+    previous-round only), entry nodes get the task, the judge receives the whole discussion (all
+    rounds, all speakers, attributed), and the summarizer gets what the format layer passes. Use
+    config 8's snapshot and the gold cases.
+  - Fix any gap found (e.g. unattributed history messages, the judge missing rounds or the task, a
+    debater's own previous turns missing as assistant messages). Report each finding.
+  - Tests: message-level assertions for config 8's shape (2 debaters + judge, fully connected,
+    sequential, N rounds) and simultaneous / chain variants.
+  - _Requirements: 2.1, 2.3, 2.7, 2.8, 3.1, 9.1_
+
+- [x] 11.15 UI fixes: execution view overflow, Designer opens a new config, drop Dimensions legend
+  - Execution detail view: long message text and the structured JSON block overflow to the right and
+    get clipped; wrap text, keep pre blocks scrollable inside their card, fix padding/margins so
+    nothing escapes the content column. The same check applies to the chat replay.
+  - Sidebar Designer link opens a new, unsaved configuration (blank artifact with the starter
+    input, default layout) without going through Configurations. The first Save creates it and
+    switches the URL to its id. Leaving with unsaved changes asks for confirmation.
+  - Remove the Dimensions legend at the bottom of the sidebar.
+  - Tests: long-content rendering (no horizontal overflow classes missing), new-config flow
+    (open, edit, save -> POST then route), unsaved-changes guard, sidebar without the legend.
+  - _Requirements: 6.1, 11.2, 13.3_
 ```
 
 ---

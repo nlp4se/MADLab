@@ -325,6 +325,47 @@ describe("agreement: compatibility matrix and judge notices", () => {
   });
 });
 
+describe("agreement: output schema strictness (task 11.13)", () => {
+  // Config 8's schema: the OpenAI envelope, no required, extra keys allowed.
+  const ENVELOPE = {
+    name: "requirements-schema",
+    description: "A schema for classifying requirements into categories",
+    schema: { type: "object", properties: { class: { type: "string", enum: ["F", "NF"] } } },
+  };
+
+  it("warns on a non-strict schema and Make strict fixes it, keeping the envelope", async () => {
+    const user = userEvent.setup();
+    seed({ agreement: { authority: "collective", resolution: "majority_vote", output_schema: ENVELOPE } });
+    renderUi(<AgreementPanel />);
+
+    const notice = await screen.findByTestId("agr-schema-not-strict");
+    expect(notice).toHaveTextContent("has no required list and allows extra properties");
+    await user.click(within(notice).getByRole("button", { name: "Make strict" }));
+
+    expect(state().artifact!.agreement?.output_schema).toEqual({
+      ...ENVELOPE,
+      schema: { ...ENVELOPE.schema, required: ["class"], additionalProperties: false },
+    });
+    expect(screen.queryByTestId("agr-schema-not-strict")).toBeNull();
+    expect((screen.getByLabelText("Output schema (JSON)") as HTMLTextAreaElement).value).toContain(
+      '"additionalProperties": false',
+    );
+  });
+
+  it("no warning without a schema or with a strict one", async () => {
+    seed({
+      agreement: {
+        authority: "collective",
+        resolution: "majority_vote",
+        output_schema: { ...ENVELOPE.schema, required: ["class"], additionalProperties: false },
+      },
+    });
+    renderUi(<AgreementPanel />);
+    expect(await screen.findByLabelText("Output schema (JSON)")).toBeInTheDocument();
+    expect(screen.queryByTestId("agr-schema-not-strict")).toBeNull();
+  });
+});
+
 describe("edge level", () => {
   it("edits only label/colour/direction and links back to debate settings", async () => {
     const user = userEvent.setup();

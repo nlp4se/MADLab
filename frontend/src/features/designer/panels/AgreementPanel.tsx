@@ -2,6 +2,11 @@
 import { Gavel, Scale } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
+import {
+  makeSchemaStrict,
+  schemaStrictness,
+  type SchemaStrictness,
+} from "@/lib/outputSchema";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
 import type { AgreementArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
@@ -48,6 +53,20 @@ const EMERGENT_HINT =
   "Works together with your topology and the judge/debater roles & prompts. " +
   "For example, 'judge-based' authority requires a judge node whose prompt " +
   "defines how it decides; the effective behaviour emerges from those choices.";
+
+/** Warning text for an output schema that is not strict (task 11.13). */
+function strictnessMessage({ missingRequired, allowsExtra }: SchemaStrictness): string {
+  const gaps = [
+    missingRequired ? "has no required list" : null,
+    allowsExtra ? "allows extra properties" : null,
+  ].filter(Boolean);
+  return (
+    `This output schema ${gaps.join(" and ")}, so providers cannot enforce it ` +
+    "strictly and the judge may omit the decision field or add others. Replies " +
+    "without the schema's fields end undecided. Make strict requires every " +
+    "property and sets additionalProperties to false."
+  );
+}
 
 export function AgreementPanel() {
   const { getSubDimension, getValue, isUnderDevelopment } = useTaxonomy();
@@ -98,6 +117,7 @@ export function AgreementPanel() {
 
   const notices = agreementNotices(artifact);
   const judges = judgeNodes(artifact.participants.nodes);
+  const strictness = schemaStrictness(agreement.output_schema);
 
   return (
     <div className="space-y-6">
@@ -222,15 +242,31 @@ export function AgreementPanel() {
         />
       ) : null}
 
-      <Disclosure summary="Structured output schema">
+      <Disclosure summary="Structured output schema" defaultOpen={strictness != null}>
         <JsonField
           label="Output schema (JSON)"
-          description="A JSON schema constraining the final decision, e.g. { class: F | NF }."
+          description="A JSON schema constraining the final decision, e.g. { class: F | NF }. The OpenAI { name, schema } envelope is accepted."
           value={agreement.output_schema ?? null}
           nullable
           onCommit={(obj) => updateAgreement({ output_schema: obj })}
           error={findError(errors, "agreement.output_schema")}
         />
+        {strictness && agreement.output_schema ? (
+          <Notice
+            testId="agr-schema-not-strict"
+            actions={[
+              {
+                label: "Make strict",
+                onClick: () =>
+                  updateAgreement({
+                    output_schema: makeSchemaStrict(agreement.output_schema!),
+                  }),
+              },
+            ]}
+          >
+            {strictnessMessage(strictness)}
+          </Notice>
+        ) : null}
       </Disclosure>
     </div>
   );
