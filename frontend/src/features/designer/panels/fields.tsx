@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, Info, Wrench } from "lucide-react";
 
 import type { FieldError, SubDimensionDTO, ValueDTO } from "@/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -159,6 +160,9 @@ export function TaxonomySelect({
   error,
   icon,
   hint,
+  disabled,
+  note,
+  disabledOptions,
 }: {
   sub: SubDimensionDTO;
   value: string | undefined;
@@ -168,6 +172,16 @@ export function TaxonomySelect({
   error?: string;
   icon?: FieldIcon;
   hint?: string;
+  /** Render the select read-only (e.g. governed elsewhere / not applicable). */
+  disabled?: boolean;
+  /** An inline note under the select (e.g. why it is disabled). */
+  note?: ReactNode;
+  /**
+   * Options that would fail / have no effect in the current context, keyed by
+   * value with a short reason appended to the option label (task 11.7). They
+   * stay visible but cannot be picked.
+   */
+  disabledOptions?: Record<string, string>;
 }) {
   const selectedKey = value ?? sub.values.find((v) => v.default)?.key;
   const selected = sub.values.find((v) => v.key === selectedKey);
@@ -189,13 +203,18 @@ export function TaxonomySelect({
         id={id}
         value={selectedKey ?? ""}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       >
-        {sub.values.map((v) => (
-          <option key={v.key} value={v.key}>
-            {v.label}
-            {isUnderDevelopment(v.key) ? " — under development" : ""}
-          </option>
-        ))}
+        {sub.values.map((v) => {
+          const unavailable = disabledOptions?.[v.key];
+          return (
+            <option key={v.key} value={v.key} disabled={unavailable !== undefined}>
+              {v.label}
+              {isUnderDevelopment(v.key) ? " — under development" : ""}
+              {unavailable !== undefined ? ` (${unavailable})` : ""}
+            </option>
+          );
+        })}
       </Select>
       {selected ? (
         <p className="text-xs text-muted-foreground">{selected.description}</p>
@@ -206,6 +225,7 @@ export function TaxonomySelect({
           This value is not yet executable — runs that depend on it are blocked.
         </p>
       ) : null}
+      {note ? <div className="text-xs text-muted-foreground">{note}</div> : null}
     </Field>
   );
 }
@@ -291,6 +311,52 @@ export function Disclosure({
       </summary>
       <div className="mt-3 space-y-3">{children}</div>
     </details>
+  );
+}
+
+/**
+ * An inline notice (task 11.7): `warning` = amber (a setting that does not do
+ * what it says, with fixes), `error` = the run would fail, `info` = neutral
+ * behaviour note. Optional action buttons render below the message.
+ */
+export function Notice({
+  tone = "warning",
+  testId,
+  actions,
+  children,
+}: {
+  tone?: "warning" | "error" | "info";
+  testId?: string;
+  actions?: Array<{ label: string; onClick: () => void }>;
+  children: ReactNode;
+}) {
+  const classes =
+    tone === "error"
+      ? "border-destructive/50 bg-destructive/5 text-destructive"
+      : tone === "warning"
+        ? "border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+        : "border-dashed bg-muted/40 text-muted-foreground";
+  const Icon = tone === "info" ? Info : AlertTriangle;
+  return (
+    <div
+      role={tone === "info" ? "note" : "alert"}
+      data-testid={testId}
+      className={cn("space-y-2 rounded-md border p-2.5 text-xs", classes)}
+    >
+      <p className="flex items-start gap-1.5">
+        <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span>{children}</span>
+      </p>
+      {actions && actions.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {actions.map((a) => (
+            <Button key={a.label} type="button" size="sm" variant="outline" onClick={a.onClick}>
+              {a.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

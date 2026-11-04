@@ -1,55 +1,43 @@
-﻿import { useMemo, useState } from "react";
-import { Boxes, Plus, Sparkles, Tag, X } from "lucide-react";
+﻿import { useState } from "react";
+import { Boxes, MessageSquareText, Plus, Sparkles, Tag, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
-import type { ParticipantNodeArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
-import { useProvidersQuery } from "../useProviders";
-import {
-  Field,
-  FieldGroup,
-  TaxonomyMultiSelect,
-  TaxonomySelect,
-  findError,
-} from "./fields";
+import { isModelShared, nodePersonaScope, personaMode } from "../participantScope";
+import { Field, FieldGroup, TaxonomyMultiSelect, findError } from "./fields";
+import { ModelEditor, PersonaEditor, SharedFromDebate } from "./sharedEditors";
 
 const CUSTOM_ROLE_PREFIX = "custom:";
 
 /**
  * Per-node Participants inspector for the selected node (Req 1.*, 6.3).
  *
- * Renders, all data-driven from the taxonomy catalog, the fields that are
- * genuinely PER-PARTICIPANT:
- *  - roles multi-select incl. custom/user-defined roles (Req 1.5, 1.6)
- *  - persona background/personality/stance + a persona-template picker (Req 1.2, 1.9, 1.10)
+ * Renders, all data-driven from the taxonomy catalog, the fields of ONE
+ * participant:
+ *  - name + roles multi-select incl. custom roles (Req 1.5, 1.6)
+ *  - persona template + attributes (Req 1.2, 1.9, 1.10)
+ *  - instructions: the raw system prompt (always per node)
  *  - base-model binding to a configured provider + model (Req 1.8, 8.6)
  *
- * The config-level participant settings (persona/base-model heterogeneity,
- * assignment) are NOT here — they live in `ParticipantsDimensionPanel`, shown
- * when no node is selected, since they describe the whole participant set.
+ * Scope rule (task 11.6): a setting is edited in exactly one place. When the
+ * debate-level Participants settings govern a value (a shared persona for
+ * debaters, a shared base model for everyone) the node shows it read-only with
+ * a "Shared: edit in debate settings" link; when persona assignment is not
+ * `manual` the persona fields are disabled.
  */
 export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
-  const { getSubDimension, taxonomy, isUnderDevelopment } = useTaxonomy();
+  const { getSubDimension, isUnderDevelopment } = useTaxonomy();
   const artifact = useDesignerStore((s) => s.artifact);
   const updateNode = useDesignerStore((s) => s.updateNode);
   const errors = useDesignerStore((s) => s.validationErrors);
-  const providersQuery = useProvidersQuery();
-
-  const node = artifact?.participants.nodes.find((n) => n.id === nodeId);
-  const nodeIndex = artifact?.participants.nodes.findIndex(
-    (n) => n.id === nodeId,
-  );
 
   const rolesSub = getSubDimension("participants", "roles");
-  const personaAttrsSub = getSubDimension("participants", "persona_attributes");
-  const familySub = getSubDimension("participants", "base_model_family");
-
   const [customRole, setCustomRole] = useState("");
 
+  const node = artifact?.participants.nodes.find((n) => n.id === nodeId);
   if (!node || !artifact) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
@@ -57,6 +45,8 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
       </p>
     );
   }
+  const nodeIndex = artifact.participants.nodes.findIndex((n) => n.id === nodeId);
+  const participants = artifact.participants;
 
   const roles = node.roles ?? [];
   const customRoles = roles.filter((r) => r.startsWith(CUSTOM_ROLE_PREFIX));
@@ -80,20 +70,11 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
     updateNode(nodeId, { roles: roles.filter((r) => r !== key) });
   };
 
-  const patchPersona = (patch: Partial<ParticipantNodeArtifact["persona"]>) =>
-    updateNode(nodeId, { persona: { ...node.persona, ...patch } });
+  const rolesError = findError(errors, `participants.nodes.${nodeIndex}.roles`);
 
-  const providers = providersQuery.data ?? [];
-  const boundProvider = providers.find(
-    (p) => String(p.id) === String(node.base_model?.provider_id),
-  );
-
-  const rolesError = findError(
-    errors,
-    `participants.nodes.${nodeIndex}.roles`,
-  );
-
-  const personaPatterns = taxonomy.templates.persona_patterns;
+  const personaScope = nodePersonaScope(participants, node);
+  const mode = personaMode(participants);
+  const modelShared = isModelShared(participants);
 
   return (
     <div className="space-y-6">
@@ -177,32 +158,30 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
         tone="prompt"
         icon={Sparkles}
       >
-        <PersonaTemplatePicker
-          nodeId={nodeId}
-          patterns={personaPatterns}
-          currentRef={node.persona?.template_ref ?? null}
+        {personaScope === "disabled" ? (
+          <p className="text-xs text-muted-foreground" data-testid="node-persona-disabled">
+            {mode === "automatic"
+              ? "Automatic persona assignment is under development; personas cannot be set by hand."
+              : "Persona assignment is Unspecified: set it to Manual in the debate settings to give participants personas."}
+          </p>
+        ) : null}
+        {personaScope === "shared" ? (
+          <SharedFromDebate what="debaters' persona" testId="node-persona-shared" />
+        ) : null}
+        <PersonaEditor
+          value={node.persona}
+          disabled={personaScope !== "own"}
+          onChange={(patch) => updateNode(nodeId, { persona: patch })}
         />
-        {personaAttrsSub?.values.map((attr) => (
-          <Field
-            key={attr.key}
-            label={attr.label}
-            description={attr.description}
-            htmlFor={`persona-${attr.key}`}
-          >
-            <Textarea
-              id={`persona-${attr.key}`}
-              rows={2}
-              value={
-                (node.persona?.[
-                  attr.key as "background" | "personality" | "stance"
-                ] as string) ?? ""
-              }
-              onChange={(e) =>
-                patchPersona({ [attr.key]: e.target.value || null })
-              }
-            />
-          </Field>
-        ))}
+      </FieldGroup>
+
+      {/* --- Instructions (always per node, independent of persona settings) --- */}
+      <FieldGroup
+        title="Instructions"
+        description="This participant's own instructions; always editable, independent of the persona settings."
+        tone="prompt"
+        icon={MessageSquareText}
+      >
         <Field
           label="System prompt"
           description="A raw system prompt overriding the composed persona (optional)."
@@ -226,137 +205,15 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
         tone="structured"
         icon={Boxes}
       >
-        <Field
-          label="Provider"
-          description="A provider configured in the Providers view."
-          htmlFor="node-provider"
-        >
-          <Select
-            id="node-provider"
-            value={node.base_model?.provider_id ?? ""}
-            onChange={(e) =>
-              updateNode(nodeId, {
-                base_model: {
-                  provider_id: e.target.value || null,
-                  model_key: null,
-                },
-              })
-            }
-          >
-            <option value="">— Select provider —</option>
-            {providers.map((p) => (
-              <option key={p.id} value={String(p.id)}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-          {providersQuery.isLoading ? (
-            <p className="text-xs text-muted-foreground">Loading providers…</p>
-          ) : null}
-          {!providersQuery.isLoading && providers.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No providers configured yet — add one in the Providers view.
-            </p>
-          ) : null}
-        </Field>
-
-        <Field
-          label="Model"
-          description="One of the provider's configured model keys."
-          htmlFor="node-model"
-        >
-          <Select
-            id="node-model"
-            value={node.base_model?.model_key ?? ""}
-            onChange={(e) =>
-              updateNode(nodeId, {
-                base_model: { model_key: e.target.value || null },
-              })
-            }
-            disabled={!boundProvider}
-          >
-            <option value="">— Select model —</option>
-            {(boundProvider?.models ?? []).map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </Select>
-        </Field>
-
-        {familySub ? (
-          <TaxonomySelect
-            sub={familySub}
-            value={node.base_model?.family}
-            onChange={(v) =>
-              updateNode(nodeId, {
-                base_model: { family: v as "open_weight" | "closed_weight" },
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="node-family"
-          />
+        {modelShared ? (
+          <SharedFromDebate what="base model" testId="node-model-shared" />
         ) : null}
+        <ModelEditor
+          value={node.base_model}
+          disabled={modelShared}
+          onChange={(patch) => updateNode(nodeId, { base_model: patch })}
+        />
       </FieldGroup>
     </div>
-  );
-}
-
-/**
- * A persona-template picker (Req 1.9). Selecting a pattern fills the node's
- * persona attribute fields from the pattern's first field-set and records the
- * `template_ref`; the fields remain fully editable afterward (Req 1.10).
- */
-function PersonaTemplatePicker({
-  nodeId,
-  patterns,
-  currentRef,
-}: {
-  nodeId: string;
-  patterns: ReturnType<typeof useTaxonomy>["taxonomy"]["templates"]["persona_patterns"];
-  currentRef: string | null;
-}) {
-  const updateNode = useDesignerStore((s) => s.updateNode);
-  const byKey = useMemo(
-    () => new Map(patterns.map((p) => [p.key, p])),
-    [patterns],
-  );
-
-  const apply = (key: string) => {
-    if (!key) {
-      updateNode(nodeId, { persona: { template_ref: null } });
-      return;
-    }
-    const pattern = byKey.get(key);
-    const first = pattern?.personas[0];
-    updateNode(nodeId, {
-      persona: {
-        template_ref: key,
-        background: first?.background ?? null,
-        personality: first?.personality ?? null,
-        stance: first?.stance ?? null,
-      },
-    });
-  };
-
-  return (
-    <Field
-      label="Persona template"
-      description="Prefill from a predefined persona pattern; all fields stay editable."
-      htmlFor="persona-template"
-    >
-      <Select
-        id="persona-template"
-        value={currentRef ?? ""}
-        onChange={(e) => apply(e.target.value)}
-      >
-        <option value="">— No template —</option>
-        {patterns.map((p) => (
-          <option key={p.key} value={p.key} title={p.description}>
-            {p.label}
-          </option>
-        ))}
-      </Select>
-    </Field>
   );
 }

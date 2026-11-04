@@ -1,3 +1,5 @@
+import { Link2 } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { useDesignerStore } from "../designerStore";
 import { parseConnectorId } from "../ioNodes";
@@ -11,6 +13,7 @@ import { Field, FieldGroup } from "./fields";
 export function EdgePanel({ edgeId }: { edgeId: string }) {
   const artifact = useDesignerStore((s) => s.artifact);
   const updateEdge = useDesignerStore((s) => s.updateEdge);
+  const setSelection = useDesignerStore((s) => s.setSelection);
 
   const edge = artifact?.interaction.topology.edges.find(
     (e) => `${e.source}->${e.target}` === edgeId,
@@ -99,6 +102,22 @@ export function EdgePanel({ edgeId }: { edgeId: string }) {
           Directed
         </label>
       </Field>
+
+      {/* Scope rule (task 11.7): an edge only carries label/colour/direction. */}
+      <div
+        className="flex flex-wrap items-center gap-1.5 rounded-md border border-dashed bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground"
+        data-testid="edge-debate-level"
+      >
+        <span>Topology template, protocol and format apply to the whole debate.</span>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 font-medium text-primary underline-offset-2 hover:underline"
+          onClick={() => setSelection(null)}
+        >
+          <Link2 className="size-3" aria-hidden />
+          Edit in debate settings
+        </button>
+      </div>
     </FieldGroup>
   );
 }

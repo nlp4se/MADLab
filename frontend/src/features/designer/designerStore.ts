@@ -39,6 +39,7 @@ import {
   effectiveExitNodeIds,
   entryConnectorId,
   exitConnectorId,
+  isJudgeOnly,
   parseConnectorId,
 } from "./ioNodes";
 import {
@@ -48,8 +49,26 @@ import {
   type LayoutMap,
   type XYPosition,
 } from "./layout";
+import {
+  alignModels,
+  alignPersonas,
+  applyNodePatch,
+  broadcastModel,
+  broadcastPersona,
+  clearPersonas,
+  inheritShared,
+  type ModelFields,
+  type PersonaFields,
+} from "./participantScope";
 import { END_NODE_ID, START_NODE_ID } from "./StartEndNodes";
 import { buildTopologyEdges, topologyMeta } from "./topology";
+import {
+  firstCompatibleResolution,
+  pruneProtocolRef,
+  resolutionCompat,
+  type Authority,
+  type Resolution,
+} from "./interactionScope";
 
 /**
  * UI-only edge bends (task 11.4): canvas edge id -> offset of the edge's drag
@@ -102,10 +121,40 @@ export interface DesignerState {
   addNode: (partial?: Partial<ParticipantNodeArtifact>) => string;
   /** Patch a single participant node's fields (Req 1.*, inspector). */
   updateNode: (id: string, patch: Partial<ParticipantNodeArtifact>) => void;
-  /** Patch participant-dimension-level fields (heterogeneity, assignment). */
+  /**
+   * Raw patch of participant-dimension-level fields (heterogeneity,
+   * assignment). Does NOT touch node data — used e.g. by the conflict fixes
+   * "Switch to heterogeneous" / "Switch to Manual". The panel's mode selects
+   * use the scope-aware setters below.
+   */
   updateParticipants: (
     patch: Partial<Omit<ParticipantsArtifact, "nodes" | "groups">>,
   ) => void;
+  /**
+   * Scope-aware participant settings (task 11.6). Switching assignment to
+   * `unspecified` clears every node's persona; switching a heterogeneity to
+   * `homogeneous` copies the source node's value to every governed node (the
+   * UI confirms first when they diverge).
+   */
+  setPersonaAssignment: (
+    value: NonNullable<ParticipantsArtifact["persona_assignment"]>,
+  ) => void;
+  setPersonaHeterogeneity: (
+    value: NonNullable<ParticipantsArtifact["persona_heterogeneity"]>,
+  ) => void;
+  setModelHeterogeneity: (
+    value: NonNullable<ParticipantsArtifact["base_model_heterogeneity"]>,
+  ) => void;
+  /** Edit the shared persona: applied to every debater-role node. */
+  updateSharedPersona: (patch: Partial<PersonaFields>) => void;
+  /** Edit the shared provider/model/family: applied to every node. */
+  updateSharedModel: (patch: Partial<ModelFields>) => void;
+  /** Conflict fix: copy the source debater's persona to every debater. */
+  alignPersonas: () => void;
+  /** Conflict fix: copy the source node's model to every node. */
+  alignModels: () => void;
+  /** Conflict fix / unspecified switch: clear every node's persona. */
+  clearPersonas: () => void;
   /** Patch a single edge's properties (name/colour/direction, Req 6.4). */
   updateEdge: (edgeId: string, patch: Partial<EdgeArtifact>) => void;
   /** Patch the topology meta (adaptability/structure/pattern) without touching E. */
@@ -125,6 +174,21 @@ export interface DesignerState {
   updateFormat: (patch: Partial<FormatArtifact>) => void;
   /** Patch the agreement (authority/resolution/params/output_schema). */
   updateAgreement: (patch: Partial<AgreementArtifact>) => void;
+  /**
+   * Set the agreement authority keeping the resolution valid (task 11.7): if
+   * the current resolution is incompatible with the new authority (see
+   * `resolutionCompat`), switch to the first compatible one and return the
+   * switch so the UI can say so; `null` when the resolution was kept.
+   */
+  setAuthority: (authority: Authority) => { from: Resolution; to: Resolution } | null;
+  /**
+   * Add a judge-role participant (inheriting the shared values, task 11.6);
+   * when the End connectors are set by hand under judge-based / hybrid
+   * authority, the new judge is connected to End. Returns its id.
+   */
+  addJudge: () => string;
+  /** Reset the End connectors to the default derivation (`exit_nodes: null`). */
+  resetExitNodes: () => void;
   /** Record server-side validation field errors (Req 7.3). */
   setValidationErrors: (errors: FieldError[]) => void;
   /** Update a node's canvas position (UI-only layout). */
@@ -261,11 +325,26 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     if (!state.artifact) return "";
     const id = partial?.id ?? nextNodeId(state.artifact);
     const index = state.artifact.participants.nodes.length + 1;
-    const node = defaultNode(id, index, partial);
-    const nodes = [...state.artifact.participants.nodes, node];
+    const existing = state.artifact.participants.nodes;
+    // New nodes inherit the debate-level shared persona/model (task 11.6).
+    const node = inheritShared(
+      state.artifact.participants,
+      existing,
+      defaultNode(id, index, partial),
+    );
+    const nodes = [...existing, node];
+    // A custom (non-empty) turn order must not silently leave a new speaking
+    // participant out: under fixed ordering it would never take a turn.
+    const protocol = state.artifact.interaction.protocol;
+    const order = protocol?.order ?? [];
+    const interaction =
+      protocol && order.length > 0 && !isJudgeOnly(node) && !order.includes(id)
+        ? { ...state.artifact.interaction, protocol: { ...protocol, order: [...order, id] } }
+        : state.artifact.interaction;
     const artifact: MADArtifact = {
       ...state.artifact,
       participants: { ...state.artifact.participants, nodes },
+      interaction,
     };
     const layout = reconcileLayout(
       nodes.map((n) => n.id),
@@ -278,9 +357,8 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   updateNode: (id, patch) => {
     const state = get();
     if (!state.artifact) return;
-    const nodes = state.artifact.participants.nodes.map((n) =>
-      n.id === id ? mergeNode(n, patch) : n,
-    );
+    // Broadcasts governed values / inherits on role gain (task 11.6).
+    const nodes = applyNodePatch(state.artifact.participants, id, patch);
     set({
       artifact: {
         ...state.artifact,
@@ -301,6 +379,51 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       dirty: true,
     });
   },
+
+  setPersonaAssignment: (value) =>
+    patchParticipants(get, set, (p) => ({
+      ...p,
+      persona_assignment: value,
+      nodes: value === "unspecified" ? clearPersonas(p.nodes) : p.nodes,
+    })),
+
+  setPersonaHeterogeneity: (value) =>
+    patchParticipants(get, set, (p) => ({
+      ...p,
+      persona_heterogeneity: value,
+      nodes:
+        value === "homogeneous" && p.persona_assignment === "manual"
+          ? alignPersonas(p.nodes)
+          : p.nodes,
+    })),
+
+  setModelHeterogeneity: (value) =>
+    patchParticipants(get, set, (p) => ({
+      ...p,
+      base_model_heterogeneity: value,
+      nodes: value === "homogeneous" ? alignModels(p.nodes) : p.nodes,
+    })),
+
+  updateSharedPersona: (patch) =>
+    patchParticipants(get, set, (p) => ({
+      ...p,
+      nodes: broadcastPersona(p.nodes, patch),
+    })),
+
+  updateSharedModel: (patch) =>
+    patchParticipants(get, set, (p) => ({
+      ...p,
+      nodes: broadcastModel(p.nodes, patch),
+    })),
+
+  alignPersonas: () =>
+    patchParticipants(get, set, (p) => ({ ...p, nodes: alignPersonas(p.nodes) })),
+
+  alignModels: () =>
+    patchParticipants(get, set, (p) => ({ ...p, nodes: alignModels(p.nodes) })),
+
+  clearPersonas: () =>
+    patchParticipants(get, set, (p) => ({ ...p, nodes: clearPersonas(p.nodes) })),
 
   updateEdge: (id, patch) => {
     const state = get();
@@ -374,6 +497,44 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     });
   },
 
+  setAuthority: (authority) => {
+    const state = get();
+    if (!state.artifact) return null;
+    const current = state.artifact.agreement?.resolution ?? "majority_vote";
+    const compatible = resolutionCompat(authority, current).allowed;
+    const resolution = compatible ? current : firstCompatibleResolution(authority);
+    set({
+      artifact: {
+        ...state.artifact,
+        agreement: { ...state.artifact.agreement, authority, resolution },
+      },
+      dirty: true,
+    });
+    return compatible ? null : { from: current, to: resolution };
+  },
+
+  addJudge: () => {
+    const id = get().addNode({ label: "Judge", roles: ["judge"] });
+    const artifact = get().artifact;
+    const authority = artifact?.agreement?.authority;
+    // Hand-set End connectors don't follow the default rule: connect the new
+    // judge so it can actually decide.
+    if (
+      artifact?.interaction.topology.exit_nodes != null &&
+      (authority === "judge_based" || authority === "hybrid")
+    ) {
+      get().addExitNode(id);
+    }
+    return id;
+  },
+
+  resetExitNodes: () => {
+    const state = get();
+    if (!state.artifact) return;
+    const artifact = withTopologyPatch(state.artifact, { exit_nodes: null });
+    set({ artifact, edgeBends: pruneBends(artifact, state.edgeBends), dirty: true });
+  },
+
   setValidationErrors: (errors) => set({ validationErrors: errors }),
 
   moveNode: (id, position) => {
@@ -422,10 +583,8 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const edges = state.artifact.interaction.topology.edges.filter(
       (e) => e.source !== id && e.target !== id,
     );
-    const order = (state.artifact.interaction.protocol?.order ?? []).filter(
-      (ref) => ref !== id,
-    );
     const topology = state.artifact.interaction.topology;
+    const protocol = state.artifact.interaction.protocol;
     const artifact: MADArtifact = {
       ...state.artifact,
       participants: { ...state.artifact.participants, nodes },
@@ -442,9 +601,8 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
             ? { exit_nodes: withoutRef(topology.exit_nodes, id) }
             : {}),
         },
-        protocol: state.artifact.interaction.protocol
-          ? { ...state.artifact.interaction.protocol, order }
-          : undefined,
+        // Prune the turn order and the hybrid phases (task 11.7).
+        protocol: protocol ? pruneProtocolRef(protocol, id) : undefined,
       },
     };
     const { [id]: _removed, ...layout } = state.layout;
@@ -570,28 +728,18 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   markSaved: () => set({ dirty: false, validationErrors: [] }),
 }));
 
-/**
- * Merge a patch into a participant node, deep-merging the nested `persona` and
- * `base_model` objects so a partial update (e.g. just `persona.stance`) does
- * not wipe sibling fields.
- */
-function mergeNode(
-  node: ParticipantNodeArtifact,
-  patch: Partial<ParticipantNodeArtifact>,
-): ParticipantNodeArtifact {
-  return {
-    ...node,
-    ...patch,
-    persona:
-      patch.persona !== undefined
-        ? { ...node.persona, ...patch.persona }
-        : node.persona,
-    base_model:
-      patch.base_model !== undefined
-        ? { ...node.base_model, ...patch.base_model }
-        : node.base_model,
-    id: node.id, // id is immutable through a patch
-  };
+/** Replace `participants` via `fn` and mark dirty (no-op without an artifact). */
+function patchParticipants(
+  get: () => DesignerState,
+  set: (partial: Partial<DesignerState>) => void,
+  fn: (p: ParticipantsArtifact) => ParticipantsArtifact,
+): void {
+  const artifact = get().artifact;
+  if (!artifact) return;
+  set({
+    artifact: { ...artifact, participants: fn(artifact.participants) },
+    dirty: true,
+  });
 }
 
 /** Immutably patch the artifact's topology (e.g. entry_nodes / exit_nodes). */

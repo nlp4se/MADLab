@@ -47,9 +47,11 @@ function seedArtifact() {
   useDesignerStore.getState().loadArtifact(1, {
     name: "Panels fixture",
     participants: {
-      base_model_heterogeneity: "homogeneous",
-      persona_heterogeneity: "homogeneous",
-      persona_assignment: "unspecified",
+      // Per-participant modes so the node panel edits persona/model directly
+      // (shared/disabled scopes are covered in participantsScope.test.tsx).
+      base_model_heterogeneity: "heterogeneous",
+      persona_heterogeneity: "heterogeneous",
+      persona_assignment: "manual",
       nodes: [
         {
           id: "a",
@@ -315,8 +317,11 @@ describe("taxonomy-driven forms — defaults pre-filled (Req 7.1)", () => {
     ) as HTMLSelectElement;
     expect(ordering.value).toBe("fixed");
 
-    // The topology structure selects are gone (canvas-driven).
-    expect(screen.queryByLabelText("Topology adaptability")).toBeNull();
+    // Adaptability is a debate-level setting (task 11.7); the structure itself
+    // stays canvas/toolbar-driven (no structure select).
+    expect(
+      (screen.getByLabelText("Topology adaptability") as HTMLSelectElement).value,
+    ).toBe("static");
     expect(screen.queryByLabelText("Topology structure")).toBeNull();
   });
 

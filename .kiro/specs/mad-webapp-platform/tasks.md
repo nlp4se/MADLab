@@ -378,6 +378,61 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: history survives close/reopen and is per config; New chat clears it; node context menu
     deletes the node and its edges; no menu for Start/End.
   - _Requirements: 6.1, 6.2, 6.8, 12.2_
+
+- [x] 11.6 Consistent debate-level vs node-level scope for Participants settings
+  - Scope rule: a setting is edited in exactly one place. Debate level = inspector with no selection;
+    node level = selected node. Values governed at debate level are read-only on nodes (shown with a
+    "Shared: edit in debate settings" link that clears the selection). The store keeps the artifact
+    consistent; the canvas reflects every change immediately (badges, colours).
+  - Persona assignment is the FIRST participant setting. `unspecified`: persona fields disabled at
+    both levels, heterogeneity disabled with a hint. `manual`: persona options appear. `automatic`:
+    under development; fields disabled with a note. Switching to `unspecified` while personas exist
+    asks for confirmation (like the topology overwrite warning) and clears them.
+  - Persona heterogeneity (only when manual). `homogeneous`: a shared persona editor (template picker
+    + background/personality/stance) at debate level, applied to every debater-role node (catalog:
+    "whether debaters share one persona"; judges/summarizers keep their own). `heterogeneous`: a
+    debate-level message says personas are set per participant; node panels are editable.
+  - Base model heterogeneity. `homogeneous`: a shared provider/model/family editor at debate level,
+    applied to ALL nodes (canvas model badges update at once). `heterogeneous`: debate-level message
+    says models are set per participant; node panels are editable.
+  - Switching heterogeneous -> homogeneous with divergent values asks for confirmation and copies the
+    first debater's persona / first bound node's model. New nodes, and nodes gaining the debater role,
+    inherit the shared values. The system prompt stays per node in its own Instructions group, always
+    editable, independent of persona settings.
+  - Loaded/imported/assistant artifacts whose data contradicts the declared mode are never silently
+    rewritten: an inline conflict banner (and an amber marker on affected nodes) offers the two fixes
+    (e.g. "Make all match" / "Switch to heterogeneous"; "Switch to Manual" / "Clear personas").
+  - Engine and schema unchanged (they already read per-node values). Add assistant prompt rules so
+    proposals respect these invariants.
+  - Tests: store invariants (broadcast, inherit, switch with/without divergence, clear on unspecified),
+    panel visibility/disabled states per mode, conflict detection and both fixes, canvas badges update.
+  - _Requirements: 1.2, 1.3, 1.4, 1.7, 1.8, 6.3, 6.8, 7.4_
+
+- [x] 11.7 Consistent scope and dependent fields for Interaction and Agreement settings
+  - Same scope rule as 11.6. Debate level: topology (template + adaptability), protocol, format,
+    agreement. Edge level: label/colour/direction only. Node level: roles (and group if the grouped
+    structure is offered). Every dependent field shows only when it has an effect; options that
+    would fail at run time are disabled with the reason (mirroring the engine), not silently allowed.
+  - Topology: show adaptability (static; dynamic under development). Detect drift: when the edges no
+    longer match the applied template over the current nodes, the summary and toolbar say "Custom
+    (edited from <template>)" and offer Re-apply. If the grouped structure is offered, nodes need a
+    group assignment; otherwise do not offer it.
+  - Protocol, mechanism first. Sequential: ordering shown. Fixed: a Turn order list (reorder
+    participants; writes `protocol.order`; empty = declaration order, shown as such) and turn-number
+    badges on canvas nodes. Randomized: note, no list. Simultaneous: ordering hidden, note that all act
+    each round. Hybrid: a phases editor (add/remove/reorder; per-phase mechanism + participants,
+    empty = all), ordering hidden, inline error when no phase exists. Node delete/rename prunes
+    `order` and `phases`.
+  - Format: debate level; if a choice requires a role (e.g. summarized content needs a summarizer, if
+    the engine requires it), show the requirement inline.
+  - Agreement, authority first, then resolution filtered by an engine-derived compatibility matrix
+    (e.g. argument_evaluation needs a judge, so it is disabled under collective). judge_based/hybrid
+    without a judge node: inline notice with an "Add judge" action. Collective with judge nodes:
+    notice that judges do not decide. End connectors update immediately when authority changes.
+    resolution_params only for weighted_vote/scoring.
+  - Tests: visibility per mechanism/ordering, turn order + badges, phases editor and pruning, drift
+    detection, compatibility matrix, judge notices and Add judge.
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 6.3, 6.5, 7.4_
 ```
 
 ---

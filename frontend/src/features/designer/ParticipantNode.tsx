@@ -1,5 +1,6 @@
 ﻿import { memo } from "react";
 import type { NodeProps } from "reactflow";
+import { AlertTriangle } from "lucide-react";
 
 import { roleIconUrl } from "@/assets/icons";
 import { DIMENSION_THEMES } from "@/taxonomy/dimensions";
@@ -26,6 +27,18 @@ export interface ParticipantNodeData {
   modelKey: string | null;
   providerId: string | null;
   selected?: boolean;
+  /**
+   * True when this node's persona/model contradicts the declared participant
+   * mode (task 11.6); rendered as an amber marker until the user resolves it
+   * from the debate-level Participants settings.
+   */
+  conflict?: boolean;
+  /**
+   * 1-based turn number under a sequential protocol with fixed ordering
+   * (task 11.7); null otherwise (randomized / simultaneous / hybrid, or a
+   * participant that takes no turn).
+   */
+  turn?: number | null;
 }
 
 const PARTICIPANTS = DIMENSION_THEMES.participants;
@@ -69,9 +82,34 @@ function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeD
       }}
       data-testid="participant-node"
       data-role={role}
+      data-conflict={data.conflict ? "true" : undefined}
     >
       {/* Direction-agnostic connectors on every side (arrows show direction). */}
       <SideHandles color={role_c.solid} />
+
+      {data.conflict ? (
+        <span
+          className="absolute -right-2 -top-2 flex size-5 items-center justify-center rounded-full border-2 border-background bg-amber-500 text-white shadow"
+          title="Contradicts the debate-level participant settings. Resolve it in the Participants settings (no selection)."
+          role="img"
+          aria-label="Participant settings conflict"
+          data-testid="participant-conflict-marker"
+        >
+          <AlertTriangle className="size-3" aria-hidden />
+        </span>
+      ) : null}
+
+      {data.turn != null ? (
+        <span
+          className="absolute -left-2 -top-2 flex size-5 items-center justify-center rounded-full border-2 border-background bg-interaction text-[10px] font-bold text-white shadow"
+          title={`Takes turn ${data.turn} in each round (fixed order).`}
+          role="img"
+          aria-label={`Turn ${data.turn}`}
+          data-testid="participant-turn-badge"
+        >
+          {data.turn}
+        </span>
+      ) : null}
 
       <div className="flex items-center gap-2.5">
         <span

@@ -28,6 +28,8 @@ import {
 } from "./ioNodes";
 import type { LayoutMap, XYPosition } from "./layout";
 import type { ParticipantNodeData } from "./ParticipantNode";
+import { conflictNodeIds } from "./participantScope";
+import { turnNumbers } from "./interactionScope";
 import {
   END_NODE_ID,
   START_NODE_ID,
@@ -62,6 +64,10 @@ export function toFlowNodes(
   layout: LayoutMap,
   selectedId: string | null,
 ): FlowNode<ParticipantNodeData>[] {
+  // Nodes whose data contradicts the declared participant modes (task 11.6).
+  const conflicts = conflictNodeIds(artifact.participants);
+  // Turn-number badges, only under sequential + fixed ordering (task 11.7).
+  const turns = turnNumbers(artifact);
   return artifact.participants.nodes.map((node) => ({
     id: node.id,
     type: "participant",
@@ -72,6 +78,8 @@ export function toFlowNodes(
       roles: node.roles ?? [],
       modelKey: node.base_model?.model_key ?? null,
       providerId: node.base_model?.provider_id ?? null,
+      conflict: conflicts.has(node.id),
+      turn: turns.get(node.id) ?? null,
     },
   }));
 }

@@ -5,7 +5,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
 import type { AgreementArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
-import { Disclosure, Field, FieldGroup, TaxonomySelect, findError } from "./fields";
+import {
+  RESOLUTION_KEYS,
+  agreementNotices,
+  firstCompatibleResolution,
+  judgeNodes,
+  resolutionCompat,
+  type Authority,
+  type Resolution,
+} from "../interactionScope";
+import {
+  Disclosure,
+  Field,
+  FieldGroup,
+  Notice,
+  TaxonomySelect,
+  findError,
+} from "./fields";
 
 /**
  * Agreement-dimension panel (Req 3.*, 7.4). Configures the `(authority,
@@ -15,6 +31,12 @@ import { Disclosure, Field, FieldGroup, TaxonomySelect, findError } from "./fiel
  * `resolution_params` and `output_schema` are free-form JSON edited as text;
  * invalid JSON surfaces a client-side error (Req 7.3) and is not committed to
  * the artifact until it parses.
+ *
+ * Scope (task 11.7): authority first, then the resolution filtered by the
+ * engine-derived compatibility matrix (`resolutionCompat`); switching
+ * authority keeps the resolution valid (and says so when it changes). Inline
+ * notices cover a missing judge (with "Add judge"), judges that do not decide
+ * under collective authority, and hand-set End connectors.
  */
 /**
  * Agreement authority/resolution work *together with* the topology and the
@@ -28,20 +50,54 @@ const EMERGENT_HINT =
   "defines how it decides; the effective behaviour emerges from those choices.";
 
 export function AgreementPanel() {
-  const { getSubDimension, isUnderDevelopment } = useTaxonomy();
+  const { getSubDimension, getValue, isUnderDevelopment } = useTaxonomy();
   const artifact = useDesignerStore((s) => s.artifact);
   const updateAgreement = useDesignerStore((s) => s.updateAgreement);
+  const setAuthority = useDesignerStore((s) => s.setAuthority);
+  const addJudge = useDesignerStore((s) => s.addJudge);
+  const resetExitNodes = useDesignerStore((s) => s.resetExitNodes);
   const errors = useDesignerStore((s) => s.validationErrors);
+  // Says so when switching authority also switched the resolution.
+  const [switchNote, setSwitchNote] = useState<string | null>(null);
 
   if (!artifact) return null;
 
   const agreement = artifact.agreement ?? {};
+  const authority: Authority = agreement.authority ?? "collective";
+  const resolution: Resolution = agreement.resolution ?? "majority_vote";
   const authoritySub = getSubDimension("agreement", "authority");
   const resolutionSub = getSubDimension("agreement", "resolution");
+  const resLabel = (key: string) => getValue("agreement", "resolution", key)?.label ?? key;
+  const authLabel = (key: string) => getValue("agreement", "authority", key)?.label ?? key;
+
+  // Authority 'other' has no executable semantics in the engine (UnderDevelopment).
+  const authorityUnderDev = (key: string) => key === "other" || isUnderDevelopment(key);
+
+  // Resolutions that would fail / not apply under the current authority.
+  const disabledResolutions: Record<string, string> = {};
+  for (const key of RESOLUTION_KEYS) {
+    const c = resolutionCompat(authority, key);
+    if (!c.allowed && c.short) disabledResolutions[key] = c.short;
+  }
+  const current = resolutionCompat(authority, resolution);
+  const fallback = firstCompatibleResolution(authority);
 
   const needsParams =
-    agreement.resolution === "weighted_vote" ||
-    agreement.resolution === "scoring";
+    current.allowed && (resolution === "weighted_vote" || resolution === "scoring");
+
+  const onAuthority = (value: Authority) => {
+    const switched = setAuthority(value);
+    setSwitchNote(
+      switched
+        ? `Resolution switched from ${resLabel(switched.from)} to ${resLabel(switched.to)}: ${
+            resolutionCompat(value, switched.from).reason ?? "not compatible with this authority."
+          }`
+        : null,
+    );
+  };
+
+  const notices = agreementNotices(artifact);
+  const judges = judgeNodes(artifact.participants.nodes);
 
   return (
     <div className="space-y-6">
@@ -56,33 +112,101 @@ export function AgreementPanel() {
           <TaxonomySelect
             sub={authoritySub}
             value={agreement.authority}
-            onChange={(v) =>
-              updateAgreement({
-                authority: v as AgreementArtifact["authority"],
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
+            onChange={(v) => onAuthority(v as Authority)}
+            isUnderDevelopment={authorityUnderDev}
             id="agr-authority"
             error={findError(errors, "agreement.authority")}
             icon={Gavel}
             hint={EMERGENT_HINT}
           />
         ) : null}
+
+        {notices.map((n) => {
+          switch (n.kind) {
+            case "no_judge":
+              return (
+                <Notice
+                  key={n.kind}
+                  testId="agr-no-judge"
+                  actions={[{ label: "Add judge", onClick: () => addJudge() }]}
+                >
+                  {n.authority === "judge_based"
+                    ? "Judge-based authority needs a participant with the Judge role; the config cannot be saved or run without one."
+                    : "Hybrid authority falls back to a judge when the collective step is inconclusive, but no participant has the Judge role: such debates end undecided."}
+                </Notice>
+              );
+            case "judges_ignored":
+              return (
+                <Notice key={n.kind} testId="agr-judges-ignored">
+                  Judges do not decide under {authLabel("collective")} authority:{" "}
+                  {judges.map((j) => j.label).join(", ")}{" "}
+                  {judges.length === 1 ? "is" : "are"} left out of the decision, and a
+                  judge-only participant takes no turn.
+                </Notice>
+              );
+            case "custom_exits":
+              return (
+                <Notice
+                  key={n.kind}
+                  tone={n.missingJudge ? "warning" : "info"}
+                  testId="agr-custom-exits"
+                  actions={[{ label: "Reset End connectors", onClick: resetExitNodes }]}
+                >
+                  {n.missingJudge
+                    ? "The End connectors were set by hand and none is a judge: judge-based authority needs a judge connected to End."
+                    : "The End connectors were set by hand on the canvas, so they do not follow the authority. Reset them to derive them from the authority again."}
+                </Notice>
+              );
+            default:
+              return null;
+          }
+        })}
+
         {resolutionSub ? (
           <TaxonomySelect
             sub={resolutionSub}
             value={agreement.resolution}
-            onChange={(v) =>
-              updateAgreement({
-                resolution: v as AgreementArtifact["resolution"],
-              })
-            }
+            onChange={(v) => {
+              setSwitchNote(null);
+              updateAgreement({ resolution: v as AgreementArtifact["resolution"] });
+            }}
             isUnderDevelopment={isUnderDevelopment}
             id="agr-resolution"
             error={findError(errors, "agreement.resolution")}
             icon={Scale}
             hint={EMERGENT_HINT}
+            disabledOptions={disabledResolutions}
+            note={
+              current.allowed && current.reason ? (
+                <span data-testid="agr-resolution-behaviour">{current.reason}</span>
+              ) : authority === "other" ? (
+                <span>
+                  Authority {authLabel("other")} is under development: the
+                  resolution is saved but not run.
+                </span>
+              ) : null
+            }
           />
+        ) : null}
+
+        {switchNote ? (
+          <Notice tone="info" testId="agr-resolution-switched">
+            {switchNote}
+          </Notice>
+        ) : null}
+
+        {!current.allowed ? (
+          <Notice
+            testId="agr-resolution-incompatible"
+            actions={[
+              {
+                label: `Switch to ${resLabel(fallback)}`,
+                onClick: () => updateAgreement({ resolution: fallback }),
+              },
+            ]}
+          >
+            {current.reason}
+          </Notice>
         ) : null}
       </FieldGroup>
 

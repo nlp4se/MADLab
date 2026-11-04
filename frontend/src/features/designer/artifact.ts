@@ -97,12 +97,19 @@ export interface TopologyArtifact {
   exit_nodes?: string[] | null;
 }
 
+/** One phase of a hybrid protocol (mirrors the backend `Phase`). */
+export interface PhaseArtifact {
+  mechanism: "sequential" | "simultaneous";
+  /** Participant ids acting in this phase; empty = every participant. */
+  participants: string[];
+}
+
 export interface ProtocolArtifact {
   mechanism?: "sequential" | "simultaneous" | "hybrid";
   max_rounds?: number;
   ordering?: "fixed" | "randomized" | "coordinator";
   order?: string[];
-  phases?: unknown[] | null;
+  phases?: PhaseArtifact[] | null;
 }
 
 export interface ContentSpecArtifact {
@@ -180,9 +187,11 @@ export const TOPOLOGY_PATTERNS: TopologyPattern[] = [
 ];
 
 /**
- * All topology choices the toolbar can apply. "fully_connected" and "grouped"
+ * All topology templates the designer knows. "fully_connected" and "grouped"
  * are topology *structures*; the rest are structured-network *patterns*. The
- * designer treats them uniformly. Ordered structures-first for the toolbar.
+ * designer treats them uniformly. Ordered structures-first. The toolbar offers
+ * all of them except "grouped" (see `OFFERED_TOPOLOGIES` in
+ * `interactionScope.ts`): the designer has no group-assignment UI.
  */
 export type ApplicableTopology =
   | "fully_connected"

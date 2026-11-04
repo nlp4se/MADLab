@@ -37,7 +37,11 @@ import { resolveConnection } from "./ioNodes";
 import { AssistantChat } from "./AssistantChat";
 import { CanvasContextMenu, useCanvasContextMenu } from "./EdgeContextMenu";
 import { useDesignerStore, withUiLayout } from "./designerStore";
-import { topologyLabel } from "./topology";
+import {
+  catalogTopologyLabel,
+  confirmApplyTopology,
+  topologyStatus,
+} from "./interactionScope";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
 
 /** Register custom node types once (stable reference). */
@@ -279,22 +283,18 @@ function DesignerCanvas({ configId }: { configId: number }) {
 
   // Apply a topology template, warning first if an existing graph would be
   // overwritten (Req 6.5 — initializing a structure replaces the current edges).
+  const labelTopology = useMemo(() => catalogTopologyLabel(getValue), [getValue]);
   const handleApplyTopology = useCallback(
     (topology: ApplicableTopology) => {
-      const hasGraph =
-        (artifact?.participants.nodes.length ?? 0) > 0 &&
-        (artifact?.interaction.topology.edges.length ?? 0) > 0;
-      if (hasGraph) {
-        const ok = window.confirm(
-          `Apply the "${topologyLabel(topology)}" topology?\n\n` +
-            "This regenerates the connections between the current participants " +
-            "and overrides the existing edges. Participant nodes are kept.",
-        );
-        if (!ok) return;
-      }
+      if (!confirmApplyTopology(artifact, labelTopology(topology))) return;
       applyTopology(topology);
     },
-    [artifact, applyTopology],
+    [artifact, applyTopology, labelTopology],
+  );
+  // Applied template vs drawn edges, for the toolbar's Topology button.
+  const status = useMemo(
+    () => (artifact ? topologyStatus(artifact, labelTopology) : undefined),
+    [artifact, labelTopology],
   );
 
   const handleSave = useCallback(async () => {
@@ -332,6 +332,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
         canDeleteSelection={selection !== null}
         dirty={dirty}
         saving={updateConfig.isPending}
+        topologyStatus={status}
       />
 
       {updateConfig.isError ? (
