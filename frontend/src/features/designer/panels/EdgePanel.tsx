@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { useDesignerStore } from "../designerStore";
+import { parseConnectorId } from "../ioNodes";
 import { Field, FieldGroup } from "./fields";
 
 /**
@@ -14,6 +15,28 @@ export function EdgePanel({ edgeId }: { edgeId: string }) {
   const edge = artifact?.interaction.topology.edges.find(
     (e) => `${e.source}->${e.target}` === edgeId,
   );
+
+  // Start/End IO connectors have no editable props; explain what they mean.
+  const connector = parseConnectorId(edgeId);
+  if (connector) {
+    return (
+      <FieldGroup
+        title={connector.kind === "entry" ? "Input connector" : "Output connector"}
+        description={
+          connector.kind === "entry"
+            ? `Start → ${connector.nodeId}: this participant receives the task input.`
+            : `${connector.nodeId} → End: this participant's output feeds the final decision.`
+        }
+        tone="structured"
+      >
+        <p className="text-xs text-muted-foreground">
+          Delete it with right-click → Delete (or the Delete key); re-add it by
+          dragging from {connector.kind === "entry" ? "Start" : "the participant"}{" "}
+          to {connector.kind === "entry" ? "the participant" : "End"}.
+        </p>
+      </FieldGroup>
+    );
+  }
 
   if (!edge) {
     return (

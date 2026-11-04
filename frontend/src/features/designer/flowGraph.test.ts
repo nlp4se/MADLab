@@ -3,6 +3,9 @@ import { MarkerType } from "reactflow";
 
 import { normalizeArtifact } from "./artifact";
 import {
+  effectiveEntryNodeIds,
+  effectiveExitNodeIds,
+  parseConnectorId,
   toFlowEdges,
   toStartEndEdges,
   toStartEndNodes,
@@ -89,7 +92,7 @@ describe("flowGraph — arrows", () => {
   });
 });
 
-describe("flowGraph — synthetic Start/End (visual only)", () => {
+describe("flowGraph — synthetic Start/End nodes + IO connectors", () => {
   it("produces non-selectable, non-deletable Start and End nodes", () => {
     const a = chainArtifact();
     const nodes = toStartEndNodes(a, layoutOf(a));
@@ -98,33 +101,110 @@ describe("flowGraph — synthetic Start/End (visual only)", () => {
     for (const n of nodes) {
       expect(n.selectable).toBe(false);
       expect(n.deletable).toBe(false);
+      expect(n.draggable).toBe(true);
     }
   });
 
-  it("wires Start -> entry node and terminal node -> End for a chain", () => {
+  it("wires Start -> every speaker and the aggregated debaters -> End (engine default)", () => {
+    // Chain a -> b -> c(judge), collective: the engine gives the task to every
+    // speaking node (a, b; c is judge-only) and aggregates a + b.
     const a = chainArtifact();
     const edges = toStartEndEdges(a);
     const ids = edges.map((e) => e.id);
-    // Entry = a (no incoming), terminal = c (no outgoing).
-    expect(ids).toContain(`${START_NODE_ID}->a`);
-    expect(ids).toContain(`c->${END_NODE_ID}`);
-    // Synthetic edges are dashed.
+    expect(ids).toEqual([
+      `${START_NODE_ID}->a`,
+      `${START_NODE_ID}->b`,
+      `a->${END_NODE_ID}`,
+      `b->${END_NODE_ID}`,
+    ]);
+    // Connectors are dashed and deletable (routed to the store by the canvas).
     expect(edges[0].style?.strokeDasharray).toBeDefined();
+    expect(edges.every((e) => e.deletable === true)).toBe(true);
   });
 
-  it("falls back to protocol order / judge when there is no pure entry/terminal", () => {
+  it("derives the same default for fully connected (topology does not matter)", () => {
     const a = fullyConnectedArtifact();
-    const edges = toStartEndEdges(a);
-    const ids = edges.map((e) => e.id);
-    // First in order is the entry fallback; judge (c) is the terminal fallback.
-    expect(ids).toContain(`${START_NODE_ID}->a`);
-    expect(ids).toContain(`c->${END_NODE_ID}`);
+    const ids = toStartEndEdges(a).map((e) => e.id);
+    expect(ids).toEqual([
+      `${START_NODE_ID}->a`,
+      `${START_NODE_ID}->b`,
+      `a->${END_NODE_ID}`,
+      `b->${END_NODE_ID}`,
+    ]);
+  });
+
+  it("marks the selected connector as selected", () => {
+    const a = chainArtifact();
+    const edges = toStartEndEdges(a, `${START_NODE_ID}->b`);
+    expect(edges.find((e) => e.id === `${START_NODE_ID}->b`)!.selected).toBe(true);
+    expect(edges.find((e) => e.id === `${START_NODE_ID}->a`)!.selected).toBe(false);
   });
 
   it("produces nothing for an empty graph", () => {
     const a = normalizeArtifact({ name: "empty", participants: { nodes: [] }, interaction: { topology: { edges: [] } } });
     expect(toStartEndNodes(a, {})).toEqual([]);
     expect(toStartEndEdges(a)).toEqual([]);
+  });
+});
+
+describe("flowGraph — effective entry/exit derivation (mirrors the engine)", () => {
+  const withAgreement = (authority: "collective" | "judge_based" | "hybrid") => {
+    const a = chainArtifact();
+    return { ...a, agreement: { ...a.agreement, authority } };
+  };
+
+  it("entries default to every non-judge-only participant", () => {
+    const a = normalizeArtifact({
+      name: "roles",
+      participants: {
+        nodes: [
+          { id: "d", label: "D", roles: ["debater"] },
+          { id: "jd", label: "JD", roles: ["judge", "debater"] },
+          { id: "j", label: "J", roles: ["judge"] },
+          { id: "s", label: "S", roles: ["summarizer"] },
+        ],
+      },
+      interaction: { topology: { edges: [] } },
+    });
+    // A judge that is also a debater speaks; a summarizer speaks too.
+    expect(effectiveEntryNodeIds(a)).toEqual(["d", "jd", "s"]);
+    // Collective aggregates non-judge, non-summarizer nodes only.
+    expect(effectiveExitNodeIds(a)).toEqual(["d"]);
+  });
+
+  it("exits default per authority: judge_based -> first judge; hybrid -> debaters + judge", () => {
+    expect(effectiveExitNodeIds(withAgreement("collective"))).toEqual(["a", "b"]);
+    expect(effectiveExitNodeIds(withAgreement("judge_based"))).toEqual(["c"]);
+    expect(effectiveExitNodeIds(withAgreement("hybrid"))).toEqual(["a", "b", "c"]);
+  });
+
+  it("explicit entry_nodes / exit_nodes override the defaults", () => {
+    const a = chainArtifact();
+    const overridden = {
+      ...a,
+      interaction: {
+        ...a.interaction,
+        topology: { ...a.interaction.topology, entry_nodes: ["b"], exit_nodes: ["c"] },
+      },
+    };
+    expect(effectiveEntryNodeIds(overridden)).toEqual(["b"]);
+    expect(effectiveExitNodeIds(overridden)).toEqual(["c"]);
+    expect(toStartEndEdges(overridden).map((e) => e.id)).toEqual([
+      `${START_NODE_ID}->b`,
+      `c->${END_NODE_ID}`,
+    ]);
+    // An explicit empty list means "no connectors" (Save validation reports it).
+    const emptied = {
+      ...a,
+      interaction: { ...a.interaction, topology: { ...a.interaction.topology, entry_nodes: [] } },
+    };
+    expect(effectiveEntryNodeIds(emptied)).toEqual([]);
+  });
+
+  it("parses connector ids and tells them apart from real edges", () => {
+    expect(parseConnectorId(`${START_NODE_ID}->a`)).toEqual({ kind: "entry", nodeId: "a" });
+    expect(parseConnectorId(`b->${END_NODE_ID}`)).toEqual({ kind: "exit", nodeId: "b" });
+    expect(parseConnectorId("a->b")).toBeNull();
   });
 });
 

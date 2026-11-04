@@ -32,6 +32,13 @@ import {
   type ParticipantsArtifact,
 } from "./artifact";
 import type { FieldError } from "@/api";
+import {
+  effectiveEntryNodeIds,
+  effectiveExitNodeIds,
+  entryConnectorId,
+  exitConnectorId,
+  parseConnectorId,
+} from "./ioNodes";
 import { autoLayout, reconcileLayout, type LayoutMap, type XYPosition } from "./layout";
 import { buildTopologyEdges, topologyMeta } from "./topology";
 
@@ -103,6 +110,24 @@ export interface DesignerState {
   removeNode: (id: string) => void;
   /** Remove a single edge by its synthetic id (`source->target`). */
   removeEdge: (edgeId: string) => void;
+  /**
+   * Start/End IO connectors (task 11.2). Each materializes the current
+   * *effective* list (explicit or default, see `ioNodes.ts`) into
+   * `interaction.topology.entry_nodes` / `exit_nodes` minus / plus `id`.
+   * Removing the last connector leaves an empty list on purpose: Save
+   * validation then reports "must be non-empty".
+   */
+  removeEntryNode: (id: string) => void;
+  addEntryNode: (id: string) => void;
+  removeExitNode: (id: string) => void;
+  addExitNode: (id: string) => void;
+  /**
+   * Delete any canvas edge by its id, routing to the right action: a real
+   * participant edge -> `removeEdge`; `__start__->X` -> `removeEntryNode(X)`;
+   * `X->__end__` -> `removeExitNode(X)`. Used by the edge context menu, the
+   * keyboard Delete, and the toolbar Delete.
+   */
+  deleteCanvasEdge: (edgeId: string) => void;
   /** Apply a topology template, regenerating E over the current nodes (Req 6.5). */
   applyTopology: (topology: ApplicableTopology) => void;
   /** Re-run auto-layout over all nodes. */
@@ -339,12 +364,23 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const order = (state.artifact.interaction.protocol?.order ?? []).filter(
       (ref) => ref !== id,
     );
+    const topology = state.artifact.interaction.topology;
     const artifact: MADArtifact = {
       ...state.artifact,
       participants: { ...state.artifact.participants, nodes },
       interaction: {
         ...state.artifact.interaction,
-        topology: { ...state.artifact.interaction.topology, edges },
+        topology: {
+          ...topology,
+          edges,
+          // Drop the deleted node from the IO lists (only touch them if set).
+          ...(topology.entry_nodes != null
+            ? { entry_nodes: withoutRef(topology.entry_nodes, id) }
+            : {}),
+          ...(topology.exit_nodes != null
+            ? { exit_nodes: withoutRef(topology.exit_nodes, id) }
+            : {}),
+        },
         protocol: state.artifact.interaction.protocol
           ? { ...state.artifact.interaction.protocol, order }
           : undefined,
@@ -352,10 +388,13 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     };
     const { [id]: _removed, ...layout } = state.layout;
     void _removed;
+    const sel = state.selection;
     const selection =
-      state.selection?.kind === "node" && state.selection.id === id
+      (sel?.kind === "node" && sel.id === id) ||
+      (sel?.kind === "edge" &&
+        (sel.id.startsWith(`${id}->`) || sel.id.endsWith(`->${id}`)))
         ? null
-        : state.selection;
+        : sel;
     set({ artifact, layout, selection, dirty: true });
   },
 
@@ -370,6 +409,57 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
         ? null
         : state.selection;
     set({ artifact: withEdges(state.artifact, edges), selection, dirty: true });
+  },
+
+  removeEntryNode: (id) => {
+    const state = get();
+    if (!state.artifact) return;
+    const entries = effectiveEntryNodeIds(state.artifact).filter((x) => x !== id);
+    set({
+      artifact: withTopologyPatch(state.artifact, { entry_nodes: entries }),
+      selection: clearSelectionIf(state.selection, entryConnectorId(id)),
+      dirty: true,
+    });
+  },
+
+  addEntryNode: (id) => {
+    const state = get();
+    if (!state.artifact || !hasNode(state.artifact, id)) return;
+    const entries = effectiveEntryNodeIds(state.artifact);
+    if (entries.includes(id)) return;
+    set({
+      artifact: withTopologyPatch(state.artifact, { entry_nodes: [...entries, id] }),
+      dirty: true,
+    });
+  },
+
+  removeExitNode: (id) => {
+    const state = get();
+    if (!state.artifact) return;
+    const exits = effectiveExitNodeIds(state.artifact).filter((x) => x !== id);
+    set({
+      artifact: withTopologyPatch(state.artifact, { exit_nodes: exits }),
+      selection: clearSelectionIf(state.selection, exitConnectorId(id)),
+      dirty: true,
+    });
+  },
+
+  addExitNode: (id) => {
+    const state = get();
+    if (!state.artifact || !hasNode(state.artifact, id)) return;
+    const exits = effectiveExitNodeIds(state.artifact);
+    if (exits.includes(id)) return;
+    set({
+      artifact: withTopologyPatch(state.artifact, { exit_nodes: [...exits, id] }),
+      dirty: true,
+    });
+  },
+
+  deleteCanvasEdge: (id) => {
+    const connector = parseConnectorId(id);
+    if (connector?.kind === "entry") get().removeEntryNode(connector.nodeId);
+    else if (connector?.kind === "exit") get().removeExitNode(connector.nodeId);
+    else get().removeEdge(id);
   },
 
   applyTopology: (topology) => {
@@ -427,6 +517,40 @@ function mergeNode(
         : node.base_model,
     id: node.id, // id is immutable through a patch
   };
+}
+
+/** Immutably patch the artifact's topology (e.g. entry_nodes / exit_nodes). */
+function withTopologyPatch(
+  artifact: MADArtifact,
+  patch: Partial<MADArtifact["interaction"]["topology"]>,
+): MADArtifact {
+  return {
+    ...artifact,
+    interaction: {
+      ...artifact.interaction,
+      topology: { ...artifact.interaction.topology, ...patch },
+    },
+  };
+}
+
+/** True if `id` is an existing participant node. */
+function hasNode(artifact: MADArtifact, id: string): boolean {
+  return artifact.participants.nodes.some((n) => n.id === id);
+}
+
+/**
+ * Drop `id` from an IO list. If that empties a list which was non-empty, reset
+ * it to `null` (the default) rather than leaving an invalid empty list behind;
+ * a list the user already emptied by hand stays empty.
+ */
+function withoutRef(list: string[], id: string): string[] | null {
+  const next = list.filter((ref) => ref !== id);
+  return next.length === 0 && list.length > 0 ? null : next;
+}
+
+/** Clear the selection when it is the (now removed) edge `id`. */
+function clearSelectionIf(selection: Selection, id: string): Selection {
+  return selection?.kind === "edge" && selection.id === id ? null : selection;
 }
 
 /** Immutably replace the artifact's topology edge list. */

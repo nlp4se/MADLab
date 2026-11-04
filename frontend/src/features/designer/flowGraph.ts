@@ -8,15 +8,23 @@
  * store mutations, never by mutating these derived objects.
  *
  * `toFlowNodes` / `toFlowEdges` project ONLY the real artifact participants and
- * edges (V and E). The synthetic Start/End nodes and their edges are produced
- * by the separate `toStartEndNodes` / `toStartEndEdges` helpers and concatenated
- * by the canvas, so the pure artifact<->canvas projection (and its round-trip
- * tests) stay exactly 1:1 with the artifact.
+ * edges (V and E). The synthetic Start/End nodes and their IO connector edges
+ * (derived from `topology.entry_nodes` / `exit_nodes` or their engine-mirroring
+ * defaults, see `ioNodes.ts`) are produced by the separate `toStartEndNodes` /
+ * `toStartEndEdges` helpers and concatenated by the canvas, so the pure
+ * artifact<->canvas edge projection (and its round-trip tests) stay exactly 1:1
+ * with `topology.edges`.
  */
 import { MarkerType, type Edge as FlowEdge, type Node as FlowNode } from "reactflow";
 
 import type { MADArtifact } from "./artifact";
 import { edgeId } from "./designerStore";
+import {
+  effectiveEntryNodeIds,
+  effectiveExitNodeIds,
+  entryConnectorId,
+  exitConnectorId,
+} from "./ioNodes";
 import type { LayoutMap, XYPosition } from "./layout";
 import type { ParticipantNodeData } from "./ParticipantNode";
 import {
@@ -85,46 +93,16 @@ export function toFlowEdges(
 
 /* ----------------------- synthetic Start / End nodes ---------------------- */
 
-/**
- * Entry participants = nodes with NO incoming participant->participant edge.
- * When none exist (e.g. fully_connected, where every node has an incoming
- * edge), fall back to the first node in the protocol order (or the first
- * participant). These are the nodes the instance input is fed into.
- */
-function entryNodeIds(artifact: MADArtifact): string[] {
-  const nodes = artifact.participants.nodes;
-  if (nodes.length === 0) return [];
-  const withIncoming = new Set(
-    artifact.interaction.topology.edges.map((e) => e.target),
-  );
-  const entries = nodes.filter((n) => !withIncoming.has(n.id)).map((n) => n.id);
-  if (entries.length > 0) return entries;
-  const order = artifact.interaction.protocol?.order ?? [];
-  const first = order.find((id) => nodes.some((n) => n.id === id)) ?? nodes[0].id;
-  return [first];
-}
-
-/**
- * Terminal participants = nodes with NO outgoing edge. When none exist, prefer
- * judge-role nodes (they produce the final decision); else fall back to the
- * last node in the protocol order (or the last participant). These feed End.
- */
-function terminalNodeIds(artifact: MADArtifact): string[] {
-  const nodes = artifact.participants.nodes;
-  if (nodes.length === 0) return [];
-  const withOutgoing = new Set(
-    artifact.interaction.topology.edges.map((e) => e.source),
-  );
-  const terminals = nodes.filter((n) => !withOutgoing.has(n.id)).map((n) => n.id);
-  if (terminals.length > 0) return terminals;
-  const judges = nodes.filter((n) => (n.roles ?? []).includes("judge")).map((n) => n.id);
-  if (judges.length > 0) return judges;
-  const order = artifact.interaction.protocol?.order ?? [];
-  const last =
-    [...order].reverse().find((id) => nodes.some((n) => n.id === id)) ??
-    nodes[nodes.length - 1].id;
-  return [last];
-}
+// The Start/End derivation rule lives in `ioNodes.ts` (shared with the store);
+// re-exported here so canvas callers/tests have one import site.
+export {
+  effectiveEntryNodeIds,
+  effectiveExitNodeIds,
+  entryConnectorId,
+  exitConnectorId,
+  isJudgeOnly,
+  parseConnectorId,
+} from "./ioNodes";
 
 /** Bounding box of the participant layout, for placing Start/End on the sides. */
 function layoutBounds(nodeIds: string[], layout: LayoutMap) {
@@ -189,41 +167,51 @@ export function toStartEndNodes(
 }
 
 /**
- * The synthetic edges: Start -> each entry participant, and each terminal
- * participant -> End. Dashed + arrow-headed so they read as the input/output
+ * The IO connector edges: Start -> each effective entry participant, and each
+ * effective exit participant -> End (see `ioNodes.ts` for the rule, which
+ * mirrors the engine). Dashed + arrow-headed so they read as the input/output
  * flow and are visually distinct from the real (solid) participant edges. Their
  * ids are namespaced with the sentinel node ids so they never collide with a
- * real edge id. NOT part of the artifact.
+ * real edge id.
+ *
+ * They are selectable and deletable: a delete (keyboard or context menu) is
+ * routed by the canvas to the store's `removeEntryNode` / `removeExitNode`,
+ * which persist `interaction.topology.entry_nodes` / `exit_nodes`.
  */
-export function toStartEndEdges(artifact: MADArtifact): FlowEdge[] {
+export function toStartEndEdges(
+  artifact: MADArtifact,
+  selectedId: string | null = null,
+): FlowEdge[] {
   const nodes = artifact.participants.nodes;
   if (nodes.length === 0) return [];
-  const edges: FlowEdge[] = [];
-  for (const entry of entryNodeIds(artifact)) {
-    edges.push({
-      id: `${START_NODE_ID}->${entry}`,
-      source: START_NODE_ID,
-      target: entry,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 18 },
-      deletable: false,
-      markerEnd: { ...ARROW, color: START_EDGE_COLOR },
-      style: { stroke: START_EDGE_COLOR, strokeWidth: 2, strokeDasharray: "5 4" },
-    });
-  }
-  for (const terminal of terminalNodeIds(artifact)) {
-    edges.push({
-      id: `${terminal}->${END_NODE_ID}`,
-      source: terminal,
-      target: END_NODE_ID,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 18 },
-      deletable: false,
-      markerEnd: { ...ARROW, color: END_EDGE_COLOR },
-      style: { stroke: END_EDGE_COLOR, strokeWidth: 2, strokeDasharray: "5 4" },
-    });
-  }
-  return edges;
+  const connector = (
+    id: string,
+    source: string,
+    target: string,
+    color: string,
+  ): FlowEdge => ({
+    id,
+    source,
+    target,
+    type: "smoothstep",
+    pathOptions: { borderRadius: 18 },
+    deletable: true,
+    selected: id === selectedId,
+    markerEnd: { ...ARROW, color },
+    style: {
+      stroke: color,
+      strokeWidth: id === selectedId ? 3 : 2,
+      strokeDasharray: "5 4",
+    },
+  });
+  return [
+    ...effectiveEntryNodeIds(artifact).map((entry) =>
+      connector(entryConnectorId(entry), START_NODE_ID, entry, START_EDGE_COLOR),
+    ),
+    ...effectiveExitNodeIds(artifact).map((exit) =>
+      connector(exitConnectorId(exit), exit, END_NODE_ID, END_EDGE_COLOR),
+    ),
+  ];
 }
 
 /** True for the reserved synthetic node/edge ids (so canvas handlers skip them). */

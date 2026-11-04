@@ -84,6 +84,17 @@ export interface TopologyArtifact {
   structure?: TopologyStructure;
   pattern?: TopologyPattern | null;
   edges: EdgeArtifact[];
+  /**
+   * Participants that receive the task input (the Start connectors). `null` /
+   * absent = default: every participant that speaks in the rounds.
+   */
+  entry_nodes?: string[] | null;
+  /**
+   * Participants whose outputs form the final decision (the End connectors).
+   * `null` / absent = default: the judge (judge_based) or the aggregated
+   * debaters (otherwise). See `ioNodes.ts`.
+   */
+  exit_nodes?: string[] | null;
 }
 
 export interface ProtocolArtifact {

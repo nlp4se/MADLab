@@ -233,6 +233,74 @@ describe("designer store — canvas<->artifact sync (Req 6.8)", () => {
     expect(after.dirty).toBe(true);
   });
 
+  /* ------------------- Start/End IO connectors (task 11.2) ------------------ */
+
+  const topo = () => current().artifact!.interaction.topology;
+
+  it("removeEntryNode materializes the effective entries minus the node", () => {
+    // Default (null) entries = the two debaters (the judge is judge-only).
+    expect(topo().entry_nodes ?? null).toBeNull();
+    current().removeEntryNode("functional");
+    expect(topo().entry_nodes).toEqual(["non-functional"]);
+    expect(current().dirty).toBe(true);
+    // Removing the last one is allowed (Save validation reports "non-empty").
+    current().removeEntryNode("non-functional");
+    expect(topo().entry_nodes).toEqual([]);
+  });
+
+  it("addEntryNode appends to the effective entries without duplicates", () => {
+    current().addEntryNode("functional"); // already a default entry -> no-op
+    expect(topo().entry_nodes ?? null).toBeNull();
+    expect(current().dirty).toBe(false);
+
+    current().addEntryNode("judge");
+    expect(topo().entry_nodes).toEqual(["functional", "non-functional", "judge"]);
+    current().addEntryNode("judge");
+    expect(topo().entry_nodes).toEqual(["functional", "non-functional", "judge"]);
+    current().addEntryNode("ghost"); // unknown node -> ignored
+    expect(topo().entry_nodes).toHaveLength(3);
+    expect(current().dirty).toBe(true);
+  });
+
+  it("removeExitNode / addExitNode edit the effective exits (judge_based default = judge)", () => {
+    current().addExitNode("functional");
+    expect(topo().exit_nodes).toEqual(["judge", "functional"]);
+    current().removeExitNode("judge");
+    expect(topo().exit_nodes).toEqual(["functional"]);
+    current().addExitNode("functional"); // duplicate -> no change
+    expect(topo().exit_nodes).toEqual(["functional"]);
+  });
+
+  it("deleteCanvasEdge routes participant edges and Start/End connectors", () => {
+    current().deleteCanvasEdge("__start__->functional");
+    expect(topo().entry_nodes).toEqual(["non-functional"]);
+
+    current().deleteCanvasEdge("judge->__end__");
+    expect(topo().exit_nodes).toEqual([]);
+
+    current().deleteCanvasEdge("functional->judge");
+    expect(topo().edges.map(edgeId)).toEqual(["non-functional->judge"]);
+  });
+
+  it("removeNode drops the node from entry/exit lists, resetting emptied lists to null", () => {
+    current().removeEntryNode("non-functional"); // entry_nodes = [functional]
+    current().addExitNode("functional"); // exit_nodes = [judge, functional]
+    current().setSelection({ kind: "edge", id: "__start__->functional" });
+
+    current().removeNode("functional");
+    // The only entry was deleted -> back to the default (null), not [].
+    expect(topo().entry_nodes).toBeNull();
+    expect(topo().exit_nodes).toEqual(["judge"]);
+    // A selected connector of the deleted node is cleared.
+    expect(current().selection).toBeNull();
+  });
+
+  it("removeNode leaves unset (default) entry/exit lists untouched", () => {
+    current().removeNode("non-functional");
+    expect(topo().entry_nodes ?? null).toBeNull();
+    expect(topo().exit_nodes ?? null).toBeNull();
+  });
+
   it("round-trips a node-label edit from artifact to canvas projection (Req 6.8)", () => {
     // A field edit through the store (canvas -> artifact) is reflected in the
     // next canvas projection (artifact -> canvas), closing the two-way loop.

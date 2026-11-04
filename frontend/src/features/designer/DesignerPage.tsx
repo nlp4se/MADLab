@@ -32,6 +32,7 @@ import {
   toStartEndNodes,
 } from "./flowGraph";
 import { AssistantChat } from "./AssistantChat";
+import { EdgeContextMenu, useEdgeContextMenu } from "./EdgeContextMenu";
 import { useDesignerStore } from "./designerStore";
 import { topologyLabel } from "./topology";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
@@ -49,8 +50,12 @@ const NODE_TYPES = {
  * Loads a config by the `:configId` route param, seeds the designer store, and
  * renders the `G=(V,E)` graph with React Flow: participants as nodes (role icon
  * + model badge, labelled in/out ports), communication as directed edges, plus
- * synthetic Start/End nodes that visualise where the instance input enters and
- * the final output leaves (the Start/End are visual only — not in the artifact).
+ * synthetic Start/End nodes whose connectors show where the instance input
+ * enters and the final output leaves. The Start/End nodes themselves are not in
+ * the artifact (their positions are UI-only), but their connectors are: they
+ * persist as `interaction.topology.entry_nodes` / `exit_nodes` (task 11.2).
+ * Any edge can be deleted via right-click -> Delete, and connectors can be
+ * re-added by dragging Start -> participant or participant -> End.
  */
 export function DesignerPage() {
   const params = useParams<{ configId?: string }>();
@@ -109,8 +114,10 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const addNode = useDesignerStore((s) => s.addNode);
   const moveNode = useDesignerStore((s) => s.moveNode);
   const connectNodes = useDesignerStore((s) => s.connectNodes);
+  const addEntryNode = useDesignerStore((s) => s.addEntryNode);
+  const addExitNode = useDesignerStore((s) => s.addExitNode);
   const removeNode = useDesignerStore((s) => s.removeNode);
-  const removeEdge = useDesignerStore((s) => s.removeEdge);
+  const deleteCanvasEdge = useDesignerStore((s) => s.deleteCanvasEdge);
   const applyTopology = useDesignerStore((s) => s.applyTopology);
   const relayout = useDesignerStore((s) => s.relayout);
   const setSelection = useDesignerStore((s) => s.setSelection);
@@ -140,10 +147,17 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const edges = useMemo<FlowEdge[]>(
     () =>
       artifact
-        ? [...toFlowEdges(artifact, selectedEdgeId), ...toStartEndEdges(artifact)]
+        ? [
+            ...toFlowEdges(artifact, selectedEdgeId),
+            ...toStartEndEdges(artifact, selectedEdgeId),
+          ]
         : [],
     [artifact, selectedEdgeId],
   );
+
+  // Right-click on any edge (participant edge or Start/End connector).
+  const { menu: edgeMenu, onEdgeContextMenu, close: closeEdgeMenu } =
+    useEdgeContextMenu();
 
   // Canvas gestures -> store mutations (canvas -> artifact). Synthetic Start/End
   // ids are ignored so they can never mutate the artifact.
@@ -175,34 +189,41 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       for (const change of changes) {
-        if ("id" in change && isSyntheticId(change.id)) continue;
         if (change.type === "remove") {
-          removeEdge(change.id);
+          // Routes participant edges to removeEdge and Start/End connectors to
+          // removeEntryNode / removeExitNode — always through the store.
+          deleteCanvasEdge(change.id);
         } else if (change.type === "select" && change.selected) {
           setSelection({ kind: "edge", id: change.id });
         }
       }
     },
-    [removeEdge, setSelection],
+    [deleteCanvasEdge, setSelection],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      // Never allow connecting to/from the synthetic Start/End nodes.
-      if (
-        connection.source &&
-        connection.target &&
-        !isSyntheticId(connection.source) &&
-        !isSyntheticId(connection.target)
-      ) {
-        connectNodes(connection.source, connection.target);
+      const { source, target } = connection;
+      if (!source || !target) return;
+      if (source === START_NODE_ID && !isSyntheticId(target)) {
+        // Start(out) -> participant(in): (re)add an input connector.
+        addEntryNode(target);
+      } else if (target === END_NODE_ID && !isSyntheticId(source)) {
+        // participant(out) -> End(in): (re)add an output connector.
+        addExitNode(source);
+      } else if (!isSyntheticId(source) && !isSyntheticId(target)) {
+        connectNodes(source, target);
       }
+      // Anything else (X -> Start, End -> X, Start -> End) is rejected.
       void addEdge(connection, edges);
     },
-    [connectNodes, edges],
+    [addEntryNode, addExitNode, connectNodes, edges],
   );
 
-  const onPaneClick = useCallback(() => setSelection(null), [setSelection]);
+  const onPaneClick = useCallback(() => {
+    closeEdgeMenu();
+    setSelection(null);
+  }, [closeEdgeMenu, setSelection]);
 
   // Apply a topology template, warning first if an existing graph would be
   // overwritten (Req 6.5 — initializing a structure replaces the current edges).
@@ -252,7 +273,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
         onAutoLayout={relayout}
         onDeleteSelection={() => {
           if (selection?.kind === "node") removeNode(selection.id);
-          else if (selection?.kind === "edge") removeEdge(selection.id);
+          else if (selection?.kind === "edge") deleteCanvasEdge(selection.id);
         }}
         onSave={handleSave}
         canDeleteSelection={selection !== null}
@@ -318,12 +339,15 @@ function DesignerCanvas({ configId }: { configId: number }) {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onPaneClick={onPaneClick}
+            onEdgeContextMenu={onEdgeContextMenu}
+            onMoveStart={closeEdgeMenu}
             fitView
             proOptions={{ hideAttribution: true }}
           >
             <Background />
             <Controls />
           </ReactFlow>
+          <EdgeContextMenu menu={edgeMenu} onClose={closeEdgeMenu} />
           <AssistantChat />
         </div>
         <Inspector />
