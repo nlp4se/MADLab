@@ -15,7 +15,6 @@ import type {
   ProviderResponse,
 } from "@/api";
 import { roleIconUrl } from "@/assets/icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,17 +25,18 @@ import {
 import { Select } from "@/components/ui/select";
 import { roleColor } from "@/features/designer/nodeStyle";
 import { useProvidersQuery } from "@/features/designer/useProviders";
-import { cn } from "@/lib/utils";
+import { cn, SCROLL_PRE, WRAP_TEXT } from "@/lib/utils";
 import { DIMENSION_THEMES } from "@/taxonomy/dimensions";
 
 import {
   buildChatTimeline,
   debateRoundCount,
-  decisionValue,
   modelBadge,
   participantsFromSnapshot,
   type ChatItem,
 } from "./chatTimeline";
+import { outputSchemaFromSnapshot, structuredMessageBody } from "./decisionDisplay";
+import { DecisionContent, DisplayValueView } from "./DecisionView";
 import { parseTranscript, roleTheme, type TranscriptUsage } from "./transcript";
 
 /**
@@ -206,6 +206,10 @@ function DebateChatBody({
     () => participantsFromSnapshot(configSnapshot),
     [configSnapshot],
   );
+  const outputSchema = useMemo(
+    () => outputSchemaFromSnapshot(configSnapshot),
+    [configSnapshot],
+  );
   const fallbackInput = useMemo(() => {
     const input = instance.resolved_input as Record<string, unknown> | null;
     const text = input?.["resolved_input"];
@@ -328,7 +332,7 @@ function DebateChatBody({
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto bg-muted/20 px-6 py-4"
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-muted/20 px-6 py-4"
         data-testid="chat-scroll"
       >
         {items.length === 0 && !instance.error ? (
@@ -339,7 +343,12 @@ function DebateChatBody({
 
         <ol className="space-y-0" aria-label="Debate timeline">
           {visible.map((item) => (
-            <ChatItemView key={item.key} item={item} providers={providers} />
+            <ChatItemView
+              key={item.key}
+              item={item}
+              providers={providers}
+              outputSchema={outputSchema}
+            />
           ))}
         </ol>
 
@@ -370,7 +379,7 @@ function DebateChatBody({
             className="mt-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
           >
             <p className="font-medium">Instance failed</p>
-            <p className="mt-1 whitespace-pre-wrap">{instance.error}</p>
+            <p className={cn("mt-1", WRAP_TEXT)}>{instance.error}</p>
           </div>
         ) : null}
       </div>
@@ -383,9 +392,11 @@ function DebateChatBody({
 function ChatItemView({
   item,
   providers,
+  outputSchema,
 }: {
   item: ChatItem;
   providers: ProviderResponse[];
+  outputSchema: unknown;
 }) {
   switch (item.kind) {
     case "task":
@@ -395,7 +406,7 @@ function ChatItemView({
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
               Task
             </p>
-            <p className="whitespace-pre-wrap break-words text-sm">{item.text}</p>
+            <p className={cn("text-sm", WRAP_TEXT)}>{item.text}</p>
           </div>
         </li>
       );
@@ -437,7 +448,7 @@ function ChatItemView({
             className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
             aria-hidden
           />
-          <span>
+          <span className={cn("min-w-0", WRAP_TEXT)} data-testid="chat-error-text">
             <span className="font-medium text-amber-700 dark:text-amber-400">
               {item.participant.label}'s call failed after {item.error.attempts}{" "}
               {item.error.attempts === 1 ? "attempt" : "attempts"}
@@ -449,11 +460,11 @@ function ChatItemView({
         </li>
       );
     case "decision":
-      return <DecisionBubble item={item} />;
+      return <DecisionBubble item={item} outputSchema={outputSchema} />;
     case "note":
       return (
         <li
-          className="mt-2 text-center text-xs text-muted-foreground"
+          className={cn("mt-2 text-center text-xs text-muted-foreground", WRAP_TEXT)}
           data-testid="chat-item"
           data-kind="note"
         >
@@ -499,6 +510,9 @@ function MessageBubble({
   const { message, participant, grouped } = item;
   const color = roleColor(message.role);
   const badge = modelBadge(participant, providers);
+  // A reply that is just its structured JSON reads as a key/value list; the
+  // raw text stays one click away.
+  const structuredBody = structuredMessageBody(message.content, message.structured);
 
   return (
     <li
@@ -546,13 +560,40 @@ function MessageBubble({
           className="rounded-2xl rounded-tl-sm border border-l-4 bg-card px-3.5 py-2.5 text-sm shadow-sm"
           style={{ borderLeftColor: color.solid }}
         >
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          {structuredBody ? (
+            <>
+              <div data-testid="message-structured-body">
+                <DisplayValueView value={structuredBody} />
+              </div>
+              <details className="mt-2 text-xs">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Raw reply
+                </summary>
+                <pre
+                  className={cn(
+                    "mt-1 max-h-60 overflow-auto rounded bg-muted/40 p-2",
+                    SCROLL_PRE,
+                    WRAP_TEXT,
+                  )}
+                >
+                  {message.content}
+                </pre>
+              </details>
+            </>
+          ) : (
+            <p className={WRAP_TEXT} data-testid="chat-message-text">
+              {message.content}
+            </p>
+          )}
           {message.structured != null ? (
             <details className="mt-2 text-xs">
               <summary className="cursor-pointer text-muted-foreground">
                 Structured output
               </summary>
-              <pre className="mt-1 max-h-60 overflow-auto rounded bg-muted/40 p-2">
+              <pre
+                className={cn("mt-1 max-h-60 overflow-auto rounded bg-muted/40 p-2", SCROLL_PRE)}
+                data-testid="chat-message-structured"
+              >
                 {JSON.stringify(message.structured, null, 2)}
               </pre>
             </details>
@@ -568,9 +609,14 @@ function MessageBubble({
   );
 }
 
-function DecisionBubble({ item }: { item: Extract<ChatItem, { kind: "decision" }> }) {
+function DecisionBubble({
+  item,
+  outputSchema,
+}: {
+  item: Extract<ChatItem, { kind: "decision" }>;
+  outputSchema: unknown;
+}) {
   const { decision } = item;
-  const value = decisionValue(decision);
   const theme = roleTheme("judge");
   return (
     <li
@@ -591,37 +637,7 @@ function DecisionBubble({ item }: { item: Extract<ChatItem, { kind: "decision" }
           <Gavel className="size-3.5" aria-hidden />
           Final decision
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {decision.undecided ? (
-            <Badge variant="outline">Undecided</Badge>
-          ) : value != null ? (
-            <Badge variant="agreement" className="text-sm">
-              {value}
-            </Badge>
-          ) : (
-            <span className="text-sm text-muted-foreground">—</span>
-          )}
-          {decision.authority ? (
-            <span className="text-xs text-muted-foreground">
-              authority: {decision.authority}
-            </span>
-          ) : null}
-          {decision.resolution ? (
-            <span className="text-xs text-muted-foreground">
-              resolution: {decision.resolution}
-            </span>
-          ) : null}
-        </div>
-        {decision.structured != null ? (
-          <details className="mt-2 text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              Structured decision
-            </summary>
-            <pre className="mt-1 max-h-60 overflow-auto rounded bg-background/60 p-2">
-              {JSON.stringify(decision.structured, null, 2)}
-            </pre>
-          </details>
-        ) : null}
+        <DecisionContent decision={decision} outputSchema={outputSchema} />
       </div>
     </li>
   );

@@ -25,7 +25,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
+import { cn, SCROLL_PRE, WRAP_TEXT } from "@/lib/utils";
 import { ConfigSummaryChips } from "@/features/configs/ConfigSummaryChips";
 import type {
   ConfigSummaryAttributes,
@@ -42,6 +42,8 @@ import {
   perClassRows,
   StatusBadge,
 } from "./format";
+import { outputSchemaFromSnapshot } from "./decisionDisplay";
+import { DecisionContent } from "./DecisionView";
 import {
   parseTranscript,
   messagesByRound,
@@ -101,7 +103,7 @@ export function ExecutionDetailPage() {
   const title = execution?.config_name ?? (id != null ? `Execution #${id}` : "Execution");
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-5xl px-8 py-8">
       <button
         type="button"
         onClick={() => navigate("/executions")}
@@ -251,9 +253,12 @@ export function ExecutionDetailPage() {
                   : "This execution produced no instance records."}
               </p>
             ) : (
-              <ul className="grid gap-2">
+              // `grid-cols-1` = minmax(0, 1fr): the implicit `auto` track would
+              // size to the widest unbreakable child (a long JSON line) and
+              // push the instance cards past the content column.
+              <ul className="grid grid-cols-1 gap-2" data-testid="instance-list">
                 {execution.instances.map((instance) => (
-                  <li key={instance.instance_index}>
+                  <li key={instance.instance_index} className="min-w-0">
                     <InstanceAccordion
                       instance={instance}
                       defaultOpen={execution.instances.length === 1}
@@ -498,12 +503,15 @@ function InstanceAccordion({
               className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
             >
               <p className="font-medium">Instance failed</p>
-              <p className="mt-1 whitespace-pre-wrap">{instance.error}</p>
+              <p className={cn("mt-1", WRAP_TEXT)}>{instance.error}</p>
             </div>
           ) : null}
   
           {transcript ? (
-            <TranscriptView transcript={transcript} />
+            <TranscriptView
+              transcript={transcript}
+              outputSchema={outputSchemaFromSnapshot(configSnapshot)}
+            />
           ) : !hasError ? (
             <p className="text-sm text-muted-foreground">
               No transcript recorded for this instance.
@@ -541,11 +549,11 @@ function ResolvedInput({
         Resolved input
       </h4>
       {text ? (
-        <p className="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">
+        <p className={cn("rounded-md bg-muted/40 p-3 text-sm", WRAP_TEXT)}>
           {text}
         </p>
       ) : (
-        <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 text-xs">
+        <pre className={cn("rounded-md bg-muted/40 p-3 text-xs", SCROLL_PRE)}>
           {JSON.stringify(instance.resolved_input, null, 2)}
         </pre>
       )}
@@ -577,7 +585,13 @@ function InstanceMetrics({ metrics }: { metrics: JsonObject }) {
 
 /* ------------------------------- transcript ------------------------------ */
 
-function TranscriptView({ transcript }: { transcript: Transcript }) {
+function TranscriptView({
+  transcript,
+  outputSchema,
+}: {
+  transcript: Transcript;
+  outputSchema: unknown;
+}) {
   const rounds = useMemo(
     () => messagesByRound(transcript.messages),
     [transcript.messages],
@@ -612,9 +626,9 @@ function TranscriptView({ transcript }: { transcript: Transcript }) {
             <AlertTriangle className="size-3.5" aria-hidden />
             Recoverable errors ({transcript.errors.length})
           </h4>
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 space-y-1 text-sm" data-testid="recoverable-errors">
             {transcript.errors.map((err, i) => (
-              <li key={i} className="text-muted-foreground">
+              <li key={i} className={cn("text-muted-foreground", WRAP_TEXT)}>
                 <span className="font-mono text-xs">{err.node_id}</span> · round{" "}
                 {err.round_index + 1} · {err.attempts}{" "}
                 {err.attempts === 1 ? "attempt" : "attempts"}: {err.message}
@@ -626,14 +640,16 @@ function TranscriptView({ transcript }: { transcript: Transcript }) {
 
       {/* Final decision (Req 11.2). */}
       {transcript.decision ? (
-        <DecisionCard decision={transcript.decision} />
+        <DecisionCard decision={transcript.decision} outputSchema={outputSchema} />
       ) : null}
 
       {/* Notes bubbled up during the run. */}
       {transcript.notes.length > 0 ? (
         <div className="text-xs text-muted-foreground">
           {transcript.notes.map((note, i) => (
-            <p key={i}>{note}</p>
+            <p key={i} className={WRAP_TEXT}>
+              {note}
+            </p>
           ))}
         </div>
       ) : null}
@@ -648,17 +664,18 @@ function MessageCard({ message }: { message: TranscriptMessage }) {
   return (
     <div
       className={cn(
-        "rounded-md border-l-4 bg-card p-3",
+        "min-w-0 rounded-md border-l-4 bg-card p-3",
         theme.classes.border,
       )}
+      data-testid="transcript-message"
       data-role={message.role}
       data-dimension={theme.key}
     >
-      <div className="mb-1 flex flex-wrap items-center gap-2">
+      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
         {icon ? (
           <img src={icon} alt="" aria-hidden className="size-4" />
         ) : null}
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
           {message.node_id}
         </span>
         <Badge variant={theme.badgeVariant} className="gap-1 capitalize">
@@ -667,10 +684,15 @@ function MessageCard({ message }: { message: TranscriptMessage }) {
         {message.usage ? <UsageChips usage={message.usage} /> : null}
       </div>
 
-      <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+      <p className={cn("text-sm", WRAP_TEXT)} data-testid="message-text">
+        {message.content}
+      </p>
 
       {message.structured != null ? (
-        <pre className="mt-2 overflow-x-auto rounded bg-muted/40 p-2 text-xs">
+        <pre
+          className={cn("mt-2 rounded bg-muted/40 p-2 text-xs", SCROLL_PRE)}
+          data-testid="message-structured"
+        >
           {JSON.stringify(message.structured, null, 2)}
         </pre>
       ) : null}
@@ -680,7 +702,7 @@ function MessageCard({ message }: { message: TranscriptMessage }) {
           <summary className="cursor-pointer text-muted-foreground">
             Metadata
           </summary>
-          <pre className="mt-1 overflow-x-auto rounded bg-muted/40 p-2">
+          <pre className={cn("mt-1 rounded bg-muted/40 p-2", SCROLL_PRE)}>
             {JSON.stringify(message.metadata, null, 2)}
           </pre>
         </details>
@@ -700,22 +722,17 @@ function UsageChips({ usage }: { usage: TranscriptUsage }) {
 
 function DecisionCard({
   decision,
+  outputSchema,
 }: {
   decision: NonNullable<Transcript["decision"]>;
+  outputSchema: unknown;
 }) {
   const theme = roleTheme("judge");
-  const value =
-    decision.decision == null
-      ? null
-      : typeof decision.decision === "string" ||
-          typeof decision.decision === "number"
-        ? String(decision.decision)
-        : JSON.stringify(decision.decision);
 
   return (
     <div
       className={cn(
-        "rounded-md border-l-4 p-3",
+        "min-w-0 rounded-md border-l-4 p-3",
         theme.classes.border,
         theme.classes.bgMuted,
       )}
@@ -726,41 +743,16 @@ function DecisionCard({
         <Gavel className="size-3.5" aria-hidden />
         Final decision
       </h4>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {decision.undecided ? (
-          <Badge variant="outline">Undecided</Badge>
-        ) : value != null ? (
-          <Badge variant="agreement" className="text-sm">
-            {value}
-          </Badge>
-        ) : (
-          <span className="text-sm text-muted-foreground">—</span>
-        )}
-        {decision.authority ? (
-          <span className="text-xs text-muted-foreground">
-            authority: {decision.authority}
-          </span>
-        ) : null}
-        {decision.resolution ? (
-          <span className="text-xs text-muted-foreground">
-            resolution: {decision.resolution}
-          </span>
-        ) : null}
-      </div>
+      <DecisionContent decision={decision} outputSchema={outputSchema} />
 
-      {decision.structured != null ? (
-        <pre className="mt-2 overflow-x-auto rounded bg-background/60 p-2 text-xs">
-          {JSON.stringify(decision.structured, null, 2)}
-        </pre>
-      ) : null}
-
-      {decision.detail && Object.keys(decision.detail).length > 0 ? (
+      {/* An undecided decision shows its reason inline (DecisionContent). */}
+      {decision.detail && !decision.undecided ? (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
             Resolution detail
           </summary>
-          <pre className="mt-1 overflow-x-auto rounded bg-background/60 p-2">
-            {JSON.stringify(decision.detail, null, 2)}
+          <pre className={cn("mt-1 rounded bg-background/60 p-2", SCROLL_PRE, WRAP_TEXT)}>
+            {decision.detail}
           </pre>
         </details>
       ) : null}

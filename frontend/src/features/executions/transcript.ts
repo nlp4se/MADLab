@@ -45,7 +45,8 @@ export interface TranscriptDecision {
   decision: unknown;
   authority: string | null;
   resolution: string | null;
-  detail: Record<string, unknown> | null;
+  /** The engine's rationale / diagnostics (e.g. why a reply failed the schema). */
+  detail: string | null;
   structured: unknown;
   undecided: boolean;
 }
@@ -119,6 +120,18 @@ function parseError(value: unknown): TranscriptError {
   };
 }
 
+/**
+ * The engine writes `detail` as a string (`AgreementResult.detail`); it used
+ * to be coerced to an object here, which dropped the reason (task 11.13).
+ */
+function parseDetail(value: unknown): string | null {
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (value && typeof value === "object" && Object.keys(value).length > 0) {
+    return JSON.stringify(value, null, 2);
+  }
+  return null;
+}
+
 function parseDecision(value: unknown): TranscriptDecision | null {
   if (!value || typeof value !== "object") return null;
   const d = value as Record<string, unknown>;
@@ -126,7 +139,7 @@ function parseDecision(value: unknown): TranscriptDecision | null {
     decision: d.decision ?? null,
     authority: typeof d.authority === "string" ? d.authority : null,
     resolution: typeof d.resolution === "string" ? d.resolution : null,
-    detail: d.detail ? asRecord(d.detail) : null,
+    detail: parseDetail(d.detail),
     structured: d.structured ?? null,
     undecided: d.undecided === true,
   };

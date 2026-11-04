@@ -223,11 +223,3 @@ export function buildChatTimeline(
   transcript.notes.forEach((text, i) => items.push({ kind: "note", key: `note-${i}`, text }));
   return items;
 }
-
-/** Human-readable decision value (mirrors DecisionCard). */
-export function decisionValue(decision: TranscriptDecision): string | null {
-  const d = decision.decision;
-  if (d == null) return null;
-  if (typeof d === "string" || typeof d === "number") return String(d);
-  return JSON.stringify(d);
-}

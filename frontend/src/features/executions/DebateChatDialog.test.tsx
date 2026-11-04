@@ -18,6 +18,7 @@ import type {
 } from "@/api";
 
 import { STEP_DELAY_MS, TYPING_DELAY_MS } from "./DebateChatDialog";
+import { EXEC3_DECISION, EXEC3_SCHEMA } from "./decisionFixtures";
 import { ExecutionDetailPage } from "./ExecutionDetailPage";
 
 /* ------------------------------- fixtures -------------------------------- */
@@ -337,5 +338,248 @@ describe("DebateChatDialog (chat replay, task 11.3)", () => {
     fireEvent.click(screen.getByRole("button", { name: /open instance #0 as chat/i }));
     const reopened = screen.getByRole("dialog");
     expect(items(reopened)).toHaveLength(7);
+  });
+});
+
+/* ------------------- final decision display (task 11.12) ------------------ */
+
+interface DecisionCase {
+  name: string;
+  decision: unknown;
+  undecided?: boolean;
+  schema?: unknown;
+  /** Expected pill text, or null for no label pill. */
+  label: string | null;
+  /** Text expected in the readable body block, or null for no body. */
+  body: string | null;
+  /** Undecided: the raw reply's label (default "MAYBE"). */
+  reply?: string;
+  /** The engine's `detail` string (shown for undecided decisions). */
+  reason?: string;
+}
+
+const LONG_TEXT =
+  "The requirement constrains how the system behaves rather than what it does, so it is non-functional.";
+
+const DECISION_CASES: DecisionCase[] = [
+  { name: "string", decision: "NFR", label: "NFR", body: null },
+  {
+    name: "enum object (execution 3)",
+    decision: EXEC3_DECISION,
+    schema: EXEC3_SCHEMA,
+    label: "Functional",
+    body: "Moderator evaluation",
+  },
+  { name: "enum object {class: F}", decision: { class: "F" }, schema: EXEC3_SCHEMA, label: "F", body: null },
+  {
+    name: "multi-field object without enum",
+    decision: { summary: "Both sides agree it is a usability constraint.", risks: ["scope", "cost"] },
+    label: null,
+    body: "Both sides agree it is a usability constraint.",
+  },
+  { name: "long text", decision: LONG_TEXT, label: null, body: LONG_TEXT },
+  { name: "undecided", decision: "MAYBE", undecided: true, schema: EXEC3_SCHEMA, label: null, body: null },
+  {
+    // Task 11.13: execution 3's off-schema reply is now rejected; the reason shows.
+    name: "undecided off-schema reply (execution 3) with reason",
+    decision: EXEC3_DECISION,
+    undecided: true,
+    schema: EXEC3_SCHEMA,
+    label: null,
+    body: "Moderator evaluation",
+    reply: "Functional",
+    reason:
+      "judge decision failed schema parsing/validation: reply has none of the schema's properties ['class']",
+  },
+];
+
+function decisionDetail(c: DecisionCase): ExecutionDetail {
+  const base = makeInstance();
+  const transcript = base.transcript as Record<string, unknown>;
+  const structured =
+    c.decision && typeof c.decision === "object" && !c.undecided ? c.decision : null;
+  const instance = makeInstance({
+    transcript: {
+      ...transcript,
+      decision: {
+        decision: c.decision,
+        authority: "judge_based",
+        resolution: "argument_evaluation",
+        detail: c.reason ?? null,
+        structured,
+        undecided: c.undecided === true,
+      },
+    } as ExecutionInstanceResult["transcript"],
+  });
+  const detail = makeDetail(instance);
+  const snapshot = detail.config_snapshot as Record<string, unknown>;
+  detail.config_snapshot = {
+    ...snapshot,
+    agreement: {
+      authority: "judge_based",
+      resolution: "argument_evaluation",
+      output_schema: c.schema ?? null,
+    },
+  } as ExecutionDetail["config_snapshot"];
+  return detail;
+}
+
+function expectDecisionCard(card: HTMLElement, c: DecisionCase) {
+  const pill = within(card).queryByTestId("decision-label");
+  if (c.label == null) expect(pill).toBeNull();
+  else expect(pill).toHaveTextContent(new RegExp(`^${c.label}$`));
+  // The pill never carries JSON.
+  expect(pill?.textContent ?? "").not.toMatch(/[{}]/);
+
+  const body = within(card).queryByTestId("decision-body");
+  if (c.body == null) expect(body).toBeNull();
+  else expect(body).toHaveTextContent(c.body);
+  expect(body?.className ?? "").not.toMatch(/rounded-full/);
+
+  if (c.undecided) {
+    expect(within(card).getByText("Undecided")).toBeInTheDocument();
+    expect(within(card).getByTestId("decision-reply")).toHaveTextContent(c.reply ?? "MAYBE");
+  }
+  const reason = within(card).queryByTestId("decision-reason");
+  if (c.reason) expect(reason).toHaveTextContent(c.reason);
+  else expect(reason).toBeNull();
+  const structured = within(card).queryByText("Structured decision");
+  if (c.decision && typeof c.decision === "object" && !c.undecided) {
+    expect(structured).toBeInTheDocument();
+  } else {
+    expect(structured).toBeNull();
+  }
+}
+
+describe("final decision display (task 11.12)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(DECISION_CASES)("$name: detail view and chat replay", async (c) => {
+    const dialog = await openChat(decisionDetail(c));
+    expectDecisionCard(within(dialog).getByTestId("chat-final-decision"), c);
+
+    const detailCard = screen
+      .getAllByTestId("final-decision")
+      .find((el) => !dialog.contains(el))!;
+    expectDecisionCard(detailCard, c);
+  });
+
+  it("execution 3: lists the debaters' arguments as bullets", async () => {
+    const c = DECISION_CASES[1];
+    const dialog = await openChat(decisionDetail(c));
+    const body = within(within(dialog).getByTestId("chat-final-decision")).getByTestId(
+      "decision-body",
+    );
+    expect(within(body).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(body).queryByText("final_classification")).toBeNull();
+  });
+
+  it("renders a JSON-only judge reply as a readable list, keeping the raw text", async () => {
+    const base = makeInstance();
+    const transcript = base.transcript as Record<string, unknown>;
+    const messages = transcript.messages as Record<string, unknown>[];
+    const raw = JSON.stringify(EXEC3_DECISION);
+    const detail = makeDetail(
+      makeInstance({
+        transcript: {
+          ...transcript,
+          messages: [
+            messages[0],
+            { ...messages[1], content: raw, structured: EXEC3_DECISION },
+          ],
+        } as ExecutionInstanceResult["transcript"],
+      }),
+    );
+    const dialog = await openChat(detail);
+    const judge = items(dialog).find((el) => el.dataset.nodeId === "judge_1")!;
+    const body = within(judge).getByTestId("message-structured-body");
+    expect(body).toHaveTextContent("Final classification");
+    expect(body).toHaveTextContent("Functional");
+    expect(within(body).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(judge).getByText("Raw reply")).toBeInTheDocument();
+    expect(within(judge).getByText(raw)).toBeInTheDocument();
+  });
+});
+
+/* --------------------- long content stays in its card (task 11.15) -------- */
+
+const LONG_TOKEN = `{"final_classification":"${"x".repeat(400)}"}`;
+const LONG_ERROR = `litellm.BadRequestError: ${"y".repeat(400)}`;
+
+function longContentDetail(): ExecutionDetail {
+  const base = makeInstance();
+  const transcript = base.transcript as Record<string, unknown>;
+  const messages = transcript.messages as Record<string, unknown>[];
+  return makeDetail(
+    makeInstance({
+      transcript: {
+        ...transcript,
+        messages: [
+          { ...messages[0], content: LONG_TOKEN },
+          {
+            ...messages[1],
+            content: "Long structured verdict",
+            structured: { label: "NFR", rationale: "z".repeat(400) },
+          },
+        ],
+        errors: [{ node_id: "debater_b", round_index: 0, message: LONG_ERROR, attempts: 3 }],
+      } as ExecutionInstanceResult["transcript"],
+    }),
+  );
+}
+
+/** The classes that keep long text / pre blocks inside their card. */
+function expectWraps(el: HTMLElement) {
+  expect(el).toHaveClass("whitespace-pre-wrap", "break-words", "[overflow-wrap:anywhere]");
+}
+function expectScrollsInCard(el: HTMLElement) {
+  expect(el).toHaveClass("max-w-full");
+  expect(el.className).toMatch(/overflow-(x-)?auto/);
+}
+
+describe("long content stays inside its card (task 11.15)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("detail view: wraps message text and errors, scrolls JSON inside the card", async () => {
+    installFetch(longContentDetail());
+    renderDetail();
+    const list = await screen.findByTestId("instance-list");
+    // The instance grid can't grow to its widest child.
+    expect(list).toHaveClass("grid-cols-1");
+    for (const li of within(list).getAllByRole("listitem").filter((el) => el.parentElement === list)) {
+      expect(li).toHaveClass("min-w-0");
+    }
+
+    const messages = within(list).getAllByTestId("transcript-message");
+    expect(messages).toHaveLength(2);
+    for (const m of messages) expect(m).toHaveClass("min-w-0");
+
+    const text = within(messages[0]).getByTestId("message-text");
+    expect(text).toHaveTextContent(LONG_TOKEN);
+    expectWraps(text);
+
+    const structured = within(messages[1]).getByTestId("message-structured");
+    expect(structured.tagName).toBe("PRE");
+    expectScrollsInCard(structured);
+
+    const errors = within(list).getByTestId("recoverable-errors");
+    const errorItem = within(errors).getByText(new RegExp(LONG_ERROR.slice(0, 40)));
+    expectWraps(errorItem);
+  });
+
+  it("chat replay: wraps message text and errors, scrolls JSON inside the bubble", async () => {
+    const dialog = await openChat(longContentDetail());
+
+    const text = within(dialog).getAllByTestId("chat-message-text")[0];
+    expect(text).toHaveTextContent(LONG_TOKEN);
+    expectWraps(text);
+
+    const structured = within(dialog).getByTestId("chat-message-structured");
+    expectScrollsInCard(structured);
+
+    const error = within(dialog).getByTestId("chat-error-text");
+    expect(error).toHaveTextContent(LONG_ERROR);
+    expect(error).toHaveClass("min-w-0");
+    expectWraps(error);
   });
 });
