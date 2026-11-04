@@ -1,0 +1,339 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type {
+  ExecutionDetail,
+  ExecutionInstanceResult,
+  ProviderResponse,
+} from "@/api";
+
+import { STEP_DELAY_MS, TYPING_DELAY_MS } from "./DebateChatDialog";
+import { ExecutionDetailPage } from "./ExecutionDetailPage";
+
+/* ------------------------------- fixtures -------------------------------- */
+
+const usage = {
+  prompt_tokens: 10,
+  completion_tokens: 8,
+  total_tokens: 18,
+  cost_usd: 0.0001,
+  latency_s: 0.5,
+};
+
+function makeInstance(
+  overrides: Partial<ExecutionInstanceResult> = {},
+): ExecutionInstanceResult {
+  return {
+    instance_index: 0,
+    resolved_input: { resolved_input: "Classify: The system shall be fast" },
+    transcript: {
+      config_id: 1,
+      config_name: "RE binary debate",
+      resolved_input: "Classify: The system shall be fast",
+      rounds: 1,
+      messages: [
+        {
+          node_id: "debater_a",
+          round_index: 0,
+          role: "debater",
+          content: "I argue this is a performance requirement.",
+          usage,
+          metadata: {},
+          structured: null,
+        },
+        {
+          // The judge is recorded after the last debate round (round_index = rounds).
+          node_id: "judge_1",
+          round_index: 1,
+          role: "judge",
+          content: "The verdict is NFR.",
+          usage: null,
+          metadata: {},
+          structured: { label: "NFR" },
+        },
+      ],
+      usage,
+      decision: {
+        decision: "NFR",
+        authority: "judge_based",
+        resolution: "argument_evaluation",
+        detail: null,
+        structured: null,
+        undecided: false,
+      },
+      errors: [
+        {
+          node_id: "debater_b",
+          round_index: 0,
+          message: "rate limited",
+          attempts: 3,
+        },
+      ],
+      notes: [],
+    },
+    final_decision: { decision: "NFR" },
+    ground_truth: "NFR",
+    metrics: { correct: true },
+    error: null,
+    ...overrides,
+  };
+}
+
+function makeDetail(instance = makeInstance()): ExecutionDetail {
+  return {
+    id: 42,
+    config_id: 1,
+    config_name: "RE binary debate",
+    input_mode: "single",
+    status: "completed",
+    progress: 1,
+    instance_count: 1,
+    completed_count: 1,
+    error_count: 0,
+    metrics: null,
+    created_at: "2024-01-01T12:00:00Z",
+    updated_at: "2024-01-01T12:05:00Z",
+    config_snapshot: {
+      name: "RE binary debate",
+      participants: {
+        nodes: [
+          {
+            id: "debater_a",
+            label: "Debater A",
+            roles: ["debater"],
+            base_model: { provider_id: "1", model_key: "gpt-4o" },
+          },
+          {
+            id: "debater_b",
+            label: "Debater B",
+            roles: ["debater"],
+            base_model: { provider_id: "1", model_key: "gpt-4o-mini" },
+          },
+          {
+            id: "judge_1",
+            label: "Chief Judge",
+            roles: ["judge"],
+            base_model: { provider_id: "2", model_key: "claude-3-5-sonnet" },
+          },
+        ],
+      },
+      interaction: {
+        topology: { structure: "star", pattern: "star" },
+        protocol: { mechanism: "sequential" },
+      },
+      agreement: { authority: "judge_based", resolution: "argument_evaluation" },
+    },
+    input_ref: {},
+    instances: [instance],
+  } as ExecutionDetail;
+}
+
+const providers: ProviderResponse[] = [
+  {
+    id: 1,
+    name: "OpenAI prod",
+    kind: "openai",
+    base_url: null,
+    models: ["gpt-4o"],
+    has_key: true,
+    created_at: null,
+    updated_at: null,
+  },
+  {
+    id: 2,
+    name: "Anthropic team",
+    kind: "anthropic",
+    base_url: null,
+    models: ["claude-3-5-sonnet"],
+    has_key: true,
+    created_at: null,
+    updated_at: null,
+  },
+];
+
+function installFetch(detail: ExecutionDetail) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    const json = (payload: unknown, status = 200) =>
+      new Response(JSON.stringify(payload), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    if (/\/executions\/\d+$/.test(url) && method === "GET") return json(detail);
+    if (url.endsWith("/providers") && method === "GET") return json(providers);
+    return json({ detail: `unhandled ${method} ${url}` }, 500);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+}
+
+function renderDetail() {
+  // gcTime: Infinity keeps React Query from scheduling GC timers, so the timer
+  // count after closing reflects only the dialog's own playback timers.
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/executions/42"]}>
+        <Routes>
+          <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+async function openChat(detail = makeDetail()) {
+  installFetch(detail);
+  const user = userEvent.setup();
+  renderDetail();
+  const opener = await screen.findByRole("button", {
+    name: /open instance #0 as chat/i,
+  });
+  await user.click(opener);
+  return screen.findByRole("dialog", { name: /RE binary debate · Instance #0/ });
+}
+
+const items = (dialog: HTMLElement) => within(dialog).queryAllByTestId("chat-item");
+
+/* --------------------------------- tests --------------------------------- */
+
+describe("DebateChatDialog (chat replay, task 11.3)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("opens from the instance and renders the timeline in order", async () => {
+    const dialog = await openChat();
+
+    const order = items(dialog).map((el) =>
+      el.dataset.kind === "divider"
+        ? `divider:${el.dataset.variant}`
+        : el.dataset.kind === "message"
+          ? `message:${el.dataset.nodeId}`
+          : el.dataset.kind,
+    );
+    expect(order).toEqual([
+      "task",
+      "divider:round",
+      "message:debater_a",
+      "error",
+      "divider:verdict",
+      "message:judge_1",
+      "decision",
+    ]);
+
+    expect(within(dialog).getByText("Round 1")).toBeInTheDocument();
+    expect(within(dialog).getByText("Verdict")).toBeInTheDocument();
+    const decision = within(dialog).getByTestId("chat-final-decision");
+    expect(within(decision).getByText("NFR")).toBeInTheDocument();
+    // Opens fully revealed.
+    expect(within(dialog).getByTestId("playback-progress")).toHaveTextContent("7 / 7");
+  });
+
+  it("attributes turns with participant labels and provider names", async () => {
+    const dialog = await openChat();
+
+    expect(
+      within(dialog).getAllByTestId("chat-author").map((el) => el.textContent),
+    ).toEqual(["Debater A", "Chief Judge"]);
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("chat-model-badge").map((el) => el.textContent),
+      ).toEqual(["OpenAI prod · gpt-4o", "Anthropic team · claude-3-5-sonnet"]),
+    );
+    expect(within(dialog).queryByText(/#1/)).not.toBeInTheDocument();
+  });
+
+  it("shows an inline line for a recoverable error", async () => {
+    const dialog = await openChat();
+    const error = items(dialog).find((el) => el.dataset.kind === "error")!;
+    expect(error).toHaveTextContent("Debater B's call failed after 3 attempts");
+    expect(error).toHaveTextContent("rate limited");
+  });
+
+  it("shows the instance error when there is no transcript", async () => {
+    const dialog = await openChat(
+      makeDetail(makeInstance({ transcript: null, error: "provider exploded" })),
+    );
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("provider exploded");
+    // The task input still comes from the instance's resolved input.
+    expect(items(dialog).map((el) => el.dataset.kind)).toEqual(["task"]);
+  });
+
+  it("plays back progressively, pauses, shows all, and clears timers on close", async () => {
+    const dialog = await openChat();
+    await waitFor(() =>
+      expect(within(dialog).getAllByTestId("chat-model-badge")).toHaveLength(2),
+    );
+
+    vi.useFakeTimers();
+    const progress = () => within(dialog).getByTestId("playback-progress");
+
+    // Play restarts from the first item.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Play" }));
+    expect(items(dialog)).toHaveLength(1);
+    expect(progress()).toHaveTextContent("1 / 7");
+
+    // Round divider after a step delay.
+    act(() => vi.advanceTimersByTime(STEP_DELAY_MS));
+    expect(items(dialog)).toHaveLength(2);
+
+    // A typing indicator precedes the agent turn.
+    expect(within(dialog).getByTestId("typing-indicator")).toHaveTextContent(
+      "Debater A is typing…",
+    );
+    act(() => vi.advanceTimersByTime(TYPING_DELAY_MS));
+    expect(items(dialog)).toHaveLength(3);
+    expect(within(dialog).getByText(/performance requirement/)).toBeInTheDocument();
+
+    // Pause stops the reveal.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(items(dialog)).toHaveLength(3);
+    expect(within(dialog).queryByTestId("typing-indicator")).not.toBeInTheDocument();
+
+    // Step forward / back.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Step forward" }));
+    expect(items(dialog)).toHaveLength(4);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Step back" }));
+    expect(items(dialog)).toHaveLength(3);
+
+    // Show all reveals everything.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Show all" }));
+    expect(items(dialog)).toHaveLength(7);
+
+    // Faster speed halves the delay.
+    fireEvent.change(within(dialog).getByLabelText("Playback speed"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Play" }));
+    act(() => vi.advanceTimersByTime(STEP_DELAY_MS / 2));
+    expect(items(dialog)).toHaveLength(2);
+
+    // Closing mid-playback unmounts the body and clears its timer.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => vi.advanceTimersByTime(10_000));
+
+    // Reopening starts fully revealed again.
+    fireEvent.click(screen.getByRole("button", { name: /open instance #0 as chat/i }));
+    const reopened = screen.getByRole("dialog");
+    expect(items(reopened)).toHaveLength(7);
+  });
+});

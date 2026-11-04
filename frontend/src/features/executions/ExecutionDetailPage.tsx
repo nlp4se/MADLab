@@ -7,6 +7,7 @@ import {
   Download,
   Gavel,
   Loader2,
+  MessagesSquare,
   Trash2,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ import type {
   JsonObject,
 } from "@/api";
 
+import { DebateChatDialog } from "./DebateChatDialog";
 import { DeleteExecutionDialog } from "./DeleteExecutionDialog";
 import {
   aggregateMetrics,
@@ -255,6 +257,8 @@ export function ExecutionDetailPage() {
                     <InstanceAccordion
                       instance={instance}
                       defaultOpen={execution.instances.length === 1}
+                      configSnapshot={execution.config_snapshot}
+                      configName={execution.config_name}
                     />
                   </li>
                 ))}
@@ -424,68 +428,95 @@ function instancePreview(instance: ExecutionInstanceResult): string {
 function InstanceAccordion({
   instance,
   defaultOpen,
+  configSnapshot,
+  configName,
 }: {
   instance: ExecutionInstanceResult;
   defaultOpen: boolean;
+  configSnapshot: JsonObject;
+  configName: string | null;
 }) {
   const transcript = useMemo(
     () => parseTranscript(instance.transcript),
     [instance.transcript],
   );
   const hasError = Boolean(instance.error);
+  const [chatOpen, setChatOpen] = useState(false);
 
   return (
-    <AccordionItem open={defaultOpen || undefined}>
-      <AccordionTrigger>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 font-mono text-xs text-muted-foreground">
-            #{instance.instance_index}
+    <div className="relative">
+      {/* Chat replay entry point (task 11.3). Positioned over the trigger row as
+          a sibling (not inside <summary>) so it never toggles the accordion. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="absolute right-10 top-1.5 z-10 h-8 gap-1.5 px-2.5 text-xs"
+        onClick={() => setChatOpen(true)}
+        aria-label={`Open instance #${instance.instance_index} as chat`}
+      >
+        <MessagesSquare aria-hidden />
+        Open as chat
+      </Button>
+      <DebateChatDialog
+        open={chatOpen}
+        onOpenChange={setChatOpen}
+        instance={instance}
+        configSnapshot={configSnapshot}
+        configName={configName}
+      />
+      <AccordionItem open={defaultOpen || undefined}>
+        <AccordionTrigger>
+          <span className="mr-32 flex min-w-0 items-center gap-2">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              #{instance.instance_index}
+            </span>
+            <span className="truncate font-normal text-muted-foreground">
+              {instancePreview(instance)}
+            </span>
+            {hasError ? (
+              <Badge variant="destructive" className="shrink-0 gap-1">
+                <AlertTriangle className="size-3" aria-hidden />
+                error
+              </Badge>
+            ) : null}
+            {instance.ground_truth != null ? (
+              <Badge variant="outline" className="shrink-0 font-normal">
+                truth: {instance.ground_truth}
+              </Badge>
+            ) : null}
           </span>
-          <span className="truncate font-normal text-muted-foreground">
-            {instancePreview(instance)}
-          </span>
+        </AccordionTrigger>
+        <AccordionContent className="space-y-4">
+          {/* Resolved input (Req 11.2). */}
+          <ResolvedInput instance={instance} transcript={transcript} />
+  
+          {/* Hard, instance-level error. */}
           {hasError ? (
-            <Badge variant="destructive" className="shrink-0 gap-1">
-              <AlertTriangle className="size-3" aria-hidden />
-              error
-            </Badge>
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
+            >
+              <p className="font-medium">Instance failed</p>
+              <p className="mt-1 whitespace-pre-wrap">{instance.error}</p>
+            </div>
           ) : null}
-          {instance.ground_truth != null ? (
-            <Badge variant="outline" className="shrink-0 font-normal">
-              truth: {instance.ground_truth}
-            </Badge>
+  
+          {transcript ? (
+            <TranscriptView transcript={transcript} />
+          ) : !hasError ? (
+            <p className="text-sm text-muted-foreground">
+              No transcript recorded for this instance.
+            </p>
           ) : null}
-        </span>
-      </AccordionTrigger>
-      <AccordionContent className="space-y-4">
-        {/* Resolved input (Req 11.2). */}
-        <ResolvedInput instance={instance} transcript={transcript} />
-
-        {/* Hard, instance-level error. */}
-        {hasError ? (
-          <div
-            role="alert"
-            className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
-          >
-            <p className="font-medium">Instance failed</p>
-            <p className="mt-1 whitespace-pre-wrap">{instance.error}</p>
-          </div>
-        ) : null}
-
-        {transcript ? (
-          <TranscriptView transcript={transcript} />
-        ) : !hasError ? (
-          <p className="text-sm text-muted-foreground">
-            No transcript recorded for this instance.
-          </p>
-        ) : null}
-
-        {/* Per-instance metrics. */}
-        {instance.metrics ? (
-          <InstanceMetrics metrics={instance.metrics} />
-        ) : null}
-      </AccordionContent>
-    </AccordionItem>
+  
+          {/* Per-instance metrics. */}
+          {instance.metrics ? (
+            <InstanceMetrics metrics={instance.metrics} />
+          ) : null}
+        </AccordionContent>
+      </AccordionItem>
+    </div>
   );
 }
 

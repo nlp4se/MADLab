@@ -342,6 +342,17 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
     gold cases and existing configs are unchanged.
   - Tests: schema validation, engine honouring overrides, canvas derivation + delete/re-add.
   - _Requirements: 2.1, 3.1, 6.2, 6.4, 6.8, 9.4_
+
+- [x] 11.3 Chat-style debate replay for an execution instance
+  - In the execution detail view, each instance gets an action that opens a popup showing that
+    instance's debate as a group-chat conversation: the task input first, then every agent turn in
+    order with round dividers, each message attributed to its participant (label, role colour, model
+    badge resolved from the config snapshot), recoverable errors inline, and the final decision as
+    the closing message.
+  - Playback controls (play/pause, step, show all) to watch how the discussion unfolded.
+  - Frontend-only: built from the stored transcript + config snapshot.
+  - Tests: component test for opening the replay, message order/attribution, and playback.
+  - _Requirements: 11.2, 13.3_
 ```
 
 ---
