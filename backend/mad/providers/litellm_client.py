@@ -40,11 +40,12 @@ Design (see design.md "Provider Abstraction & Credentials"):
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from mad.errors import ProviderError
+from mad.errors import ProviderError, redact_secrets
 from mad.output_schema import NormalizedOutputSchema, normalize_output_schema
 from mad.providers.base import Message, ModelResponse, StructuredMode, Usage
 
@@ -181,6 +182,89 @@ def _resolve_model_and_kwargs(
         kwargs["api_key"] = api_key or _LOCAL_DUMMY_API_KEY
 
     return _Resolved(model=resolved_model, kwargs=kwargs)
+
+
+# LiteLLM exception class names -> ProviderError category (checked along the
+# MRO, so subclasses such as ContextWindowExceededError map via BadRequestError).
+_CATEGORY_BY_EXCEPTION = {
+    "RateLimitError": "rate_limit",
+    "AuthenticationError": "auth",
+    "PermissionDeniedError": "auth",
+    "NotFoundError": "not_found",
+    "Timeout": "timeout",
+    "TimeoutError": "timeout",
+    "APIConnectionError": "connection",
+    "ConnectionError": "connection",
+    "ServiceUnavailableError": "server",
+    "InternalServerError": "server",
+    "BadRequestError": "bad_request",
+    "UnprocessableEntityError": "bad_request",
+    "UnsupportedParamsError": "bad_request",
+}
+
+# Gemini: ``"retryDelay": "50025s"`` in the error body's RetryInfo detail.
+_RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
+
+
+def _category_for_status(status: Optional[int]) -> Optional[str]:
+    if status is None:
+        return None
+    if status == 429:
+        return "rate_limit"
+    if status in (401, 403):
+        return "auth"
+    if status == 404:
+        return "not_found"
+    if status == 408:
+        return "timeout"
+    if status >= 500:
+        return "server"
+    if status in (400, 422):
+        return "bad_request"
+    return None
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """The provider-requested retry delay: a ``Retry-After`` header or Gemini's ``retryDelay``."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        try:
+            value = headers.get("retry-after")
+        except Exception:  # noqa: BLE001 - header access is best-effort.
+            value = None
+        if value is not None:
+            try:
+                return max(0.0, float(value))
+            except (TypeError, ValueError):
+                pass
+    match = _RETRY_DELAY.search(str(exc))
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def classify_provider_exception(
+    exc: BaseException,
+) -> tuple[str, Optional[int], Optional[float]]:
+    """Classify a raw provider/LiteLLM exception (task 11.17).
+
+    Returns ``(category, status_code, retry_after_s)`` for
+    :class:`~mad.errors.ProviderError`. The LiteLLM exception type wins over
+    the status code (its ``APIConnectionError`` carries a 500); unknown
+    exceptions are ``"other"`` (retryable, and still eligible for the
+    structured-output fallback).
+    """
+    status = getattr(exc, "status_code", None)
+    status = status if isinstance(status, int) else None
+    category: Optional[str] = None
+    for klass in type(exc).__mro__:
+        category = _CATEGORY_BY_EXCEPTION.get(klass.__name__)
+        if category is not None:
+            break
+    if category is None:
+        category = _category_for_status(status) or "other"
+    return category, status, _retry_after_seconds(exc)
 
 
 def _messages_to_litellm(messages: list[Message]) -> list[dict[str, str]]:
@@ -393,9 +477,14 @@ class LiteLLMClient:
                 response.structured_mode = "native"
                 return response
             # Native call succeeded but produced no parseable JSON -> fall back.
-        except ProviderError:
-            # Native response_format unsupported/rejected by the provider -> fall back.
-            pass
+        except ProviderError as exc:
+            # Fall back only when the provider may have rejected the request's
+            # shape (e.g. an unsupported response_format). A rate limit, auth,
+            # timeout or server error would fail the fallback too, and each
+            # extra call burns quota (task 11.17: a Gemini free-tier 429 was
+            # doubled by the fallback on every retry).
+            if not exc.request_rejected:
+                raise
 
         # 2) JSON-mode fallback: instruct the model, parse the text.
         fallback_messages = _inject_schema_instruction(
@@ -446,8 +535,16 @@ class LiteLLMClient:
         except ProviderError:
             raise
         except Exception as exc:  # noqa: BLE001 - normalize all provider errors.
+            category, status_code, retry_after_s = classify_provider_exception(exc)
             raise ProviderError(
-                f"Model call failed for {resolved.model!r} (kind={self.kind!r}): {exc}"
+                redact_secrets(
+                    f"Model call failed for {resolved.model!r} "
+                    f"(kind={self.kind!r}): {exc}",
+                    (self.api_key,),
+                ),
+                category=category,
+                status_code=status_code,
+                retry_after_s=retry_after_s,
             ) from exc
         latency_s = time.perf_counter() - start
 

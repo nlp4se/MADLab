@@ -294,11 +294,17 @@ def _execute_instance(
     try:
         transcript = run_debate(config, resolved.instance, registry, **kwargs)
     except Exception as exc:  # noqa: BLE001 - isolate: record + continue.
+        # Keep the partial transcript the engine attached (messages, errors,
+        # notes recorded before the failure), so the cause is not lost
+        # (task 11.17).
+        partial = getattr(exc, "transcript", None)
         return _InstanceOutcome(
             index=resolved.index,
             instance=resolved.instance,
             ground_truth=resolved.ground_truth,
+            transcript=partial if isinstance(partial, Transcript) else None,
             error=f"{type(exc).__name__}: {exc}",
+            output_schema=config.agreement.output_schema,
         )
     return _InstanceOutcome(
         index=resolved.index,
@@ -317,16 +323,19 @@ def _execute_instance(
 def _write_instance(
     factory: sessionmaker[Session], execution_id: int, outcome: _InstanceOutcome
 ) -> None:
-    """Persist one :class:`ExecutionInstance` row for a finished instance."""
+    """Persist one :class:`ExecutionInstance` row for a finished instance.
+
+    A failed instance keeps its partial transcript (if the engine attached
+    one) but never a decision, prediction or per-instance metrics.
+    """
     transcript_json = (
         transcript_to_dict(outcome.transcript) if outcome.transcript else None
     )
-    final_decision = (
-        transcript_json["decision"] if transcript_json else None
-    )
+    succeeded = outcome.error is None and outcome.transcript is not None
+    final_decision = transcript_json["decision"] if succeeded else None
     prediction = (
         prediction_from_transcript(outcome.transcript, outcome.output_schema)
-        if outcome.transcript is not None
+        if succeeded
         else None
     )
     per_metrics: Optional[dict[str, Any]] = None
@@ -448,7 +457,9 @@ def _aggregate_metrics(outcomes: list[_InstanceOutcome]) -> Optional[dict[str, A
     scorable = [
         o
         for o in outcomes
-        if o.transcript is not None and o.ground_truth is not None
+        if o.error is None
+        and o.transcript is not None
+        and o.ground_truth is not None
     ]
     if not scorable:
         return None

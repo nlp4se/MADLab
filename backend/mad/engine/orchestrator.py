@@ -49,7 +49,7 @@ from mad.engine.format import assemble_context, ensure_user_turn, speaker_names
 from mad.engine.graph import DebateGraph
 from mad.engine.protocol import ActivationStep, schedule_by_round
 from mad.engine.transcript import AgentMessage, Transcript, TranscriptError
-from mad.errors import ExecutionError
+from mad.errors import ExecutionError, MADError, error_summary
 from mad.input.template import resolve_template
 from mad.providers.base import Message, ModelResponse
 from mad.providers.registry import ProviderRegistry
@@ -147,6 +147,9 @@ def run_debate(
             ``other`` content strategy, ``other`` authority).
         mad.errors.ProviderError: if a participant's model binding cannot be
             resolved.
+        mad.errors.ExecutionError: if the run aborts (e.g. the judge fails
+            after retries). Any :class:`~mad.errors.MADError` raised once the
+            rounds start carries the partial transcript as ``exc.transcript``.
     """
     policy = retry_policy or RetryPolicy()
     interaction = config.interaction
@@ -173,6 +176,40 @@ def run_debate(
         config, graph, registry, policy, transcript, sleep
     )
 
+    try:
+        _run_rounds_and_agreement(
+            config=config,
+            graph=graph,
+            nodes_by_id=nodes_by_id,
+            plan_by_round=plan_by_round,
+            registry=registry,
+            policy=policy,
+            transcript=transcript,
+            summarizer=summarizer,
+            sleep=sleep,
+        )
+    except MADError as exc:
+        # Keep what was recorded before the failure (messages, errors, notes)
+        # so the caller can persist it with the error (task 11.17).
+        if exc.transcript is None:
+            exc.transcript = transcript
+        raise
+    return transcript
+
+
+def _run_rounds_and_agreement(
+    *,
+    config: MADConfig,
+    graph: DebateGraph,
+    nodes_by_id: dict[str, ParticipantNode],
+    plan_by_round: list,
+    registry: ProviderRegistry,
+    policy: RetryPolicy,
+    transcript: Transcript,
+    summarizer: Any,
+    sleep: SleepFn,
+) -> None:
+    """Run every planned round (with the early stop), then the agreement."""
     executed_rounds = 0
     step_index = 0
     for round_index, round_steps in enumerate(plan_by_round):
@@ -208,8 +245,6 @@ def run_debate(
     )
     if transcript.decision is not None and transcript.decision.detail:
         transcript.add_note(transcript.decision.detail)
-
-    return transcript
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +366,22 @@ def _run_agent_turn(
 
 
 class _CallFailed(Exception):
-    """Internal signal that a model call exhausted its retries (recorded)."""
+    """Internal signal that a model call exhausted its retries (recorded).
+
+    Carries the attempts made and a short summary of the last error so the
+    judge path can say *why* it failed (task 11.17).
+    """
+
+    def __init__(self, attempts: int = 0, summary: str = "") -> None:
+        super().__init__(summary)
+        self.attempts = attempts
+        self.summary = summary
+
+
+# Length caps for error text: the transcript keeps more detail than the
+# one-line instance error shown in lists.
+_TRANSCRIPT_ERROR_LIMIT = 600
+_INSTANCE_ERROR_LIMIT = 300
 
 
 def _invoke_with_retry(
@@ -357,6 +407,12 @@ def _invoke_with_retry(
     Returns the :class:`~mad.providers.base.ModelResponse` on success. On final
     failure, records a :class:`TranscriptError` and raises :class:`_CallFailed`
     so the caller can isolate the turn.
+
+    Retries stop early when they cannot help (task 11.17): a classified
+    :class:`~mad.errors.ProviderError` that is not ``retryable`` (auth, unknown
+    model, rejected request), or a provider-requested ``retry_after_s`` longer
+    than ``policy.max_delay_s`` (e.g. a Gemini free-tier daily quota asking to
+    retry in hours). A shorter ``retry_after_s`` stretches the next backoff.
     """
     messages = ensure_user_turn(
         messages, round_index=round_index, has_task=has_task
@@ -366,10 +422,15 @@ def _invoke_with_retry(
     params.setdefault("temperature", node.base_model.temperature)
 
     last_error: Optional[Exception] = None
+    attempts = 0
     for attempt in range(1, policy.max_attempts + 1):
         delay = policy.delay_before(attempt)
+        retry_after = getattr(last_error, "retry_after_s", None)
+        if isinstance(retry_after, (int, float)):
+            delay = max(delay, float(retry_after))
         if delay > 0:
             sleep(delay)
+        attempts = attempt
         try:
             return client.complete(
                 messages=messages,
@@ -379,19 +440,35 @@ def _invoke_with_retry(
             )
         except Exception as exc:  # noqa: BLE001 - isolate + record any failure.
             last_error = exc
+            if not _worth_retrying(exc, policy):
+                break
 
+    summary = error_summary(last_error, _TRANSCRIPT_ERROR_LIMIT) if last_error else ""
     transcript.add_error(
         TranscriptError(
             node_id=node.id,
             round_index=round_index,
             message=(
                 f"model call for node '{node.id}' failed after "
-                f"{policy.max_attempts} attempt(s): {last_error}"
+                f"{attempts} attempt(s): {summary}"
             ),
-            attempts=policy.max_attempts,
+            attempts=attempts,
         )
     )
-    raise _CallFailed()
+    raise _CallFailed(
+        attempts=attempts,
+        summary=error_summary(last_error, _INSTANCE_ERROR_LIMIT) if last_error else "",
+    )
+
+
+def _worth_retrying(exc: Exception, policy: RetryPolicy) -> bool:
+    """Whether another attempt at the same call can succeed (task 11.17)."""
+    if getattr(exc, "retryable", True) is False:
+        return False
+    retry_after = getattr(exc, "retry_after_s", None)
+    if isinstance(retry_after, (int, float)) and retry_after > policy.max_delay_s:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -532,11 +609,15 @@ def _make_judge_fn(
                 sleep=sleep,
                 response_schema=config.agreement.output_schema,
             )
-        except _CallFailed:
+        except _CallFailed as failed:
+            # Name the last provider error so the instance error is actionable
+            # on its own (task 11.17); the transcript keeps the longer text.
+            reason = f": {failed.summary}" if failed.summary else ""
             raise ExecutionError(
                 f"judge node '{judge_node.id}' failed to produce a decision "
-                "after retries; see transcript errors."
-            )
+                f"after {failed.attempts} attempt(s){reason} "
+                "(details in the transcript errors)"
+            ) from None
         transcript.add_message(
             AgentMessage(
                 node_id=judge_node.id,
