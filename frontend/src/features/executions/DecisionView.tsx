@@ -1,3 +1,4 @@
+import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { cn, SCROLL_PRE, WRAP_TEXT } from "@/lib/utils";
 
@@ -21,9 +22,8 @@ export function DisplayValueView({
 }) {
   switch (value.kind) {
     case "text":
-      return (
-        <p className={cn(WRAP_TEXT, className)}>{value.text}</p>
-      );
+      // Model-produced text leaves render Markdown (task 11.16).
+      return <Markdown className={className}>{value.text}</Markdown>;
     case "list":
       return (
         <ul className={cn("list-disc space-y-1 pl-5", className)}>

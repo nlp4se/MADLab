@@ -410,3 +410,83 @@ describe("AssistantChat session persistence (task 11.5)", () => {
     expect(screen.getByTestId("assistant-apply")).toHaveTextContent(/Applied/);
   });
 });
+
+describe("AssistantChat Markdown (task 11.16)", () => {
+  beforeEach(() => {
+    useDesignerStore.setState({
+      configId: null,
+      artifact: null,
+      layout: {},
+      selection: null,
+      dirty: false,
+      validationErrors: [],
+    });
+    useAssistantChatStore.getState().resetAll();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renders the assistant's reply as Markdown while the user's turn stays literal", async () => {
+    installFetch({
+      design: {
+        mode: "question",
+        message: "**How many** debaters?\n\n- two\n- three",
+        artifact: null,
+        under_development: [],
+      },
+    });
+    const user = userEvent.setup();
+    renderChat({ configId: 5 });
+
+    await openPanel(user);
+    await sendMessage(user, "I want **bold** and <b>tags</b>");
+
+    const reply = await screen.findByTestId("assistant-turn-assistant");
+    expect(reply.querySelector("strong")).toHaveTextContent("How many");
+    expect(reply.querySelectorAll("li")).toHaveLength(2);
+    expect(reply.textContent).not.toContain("**");
+
+    const mine = screen.getByTestId("assistant-turn-user");
+    expect(mine).toHaveTextContent("I want **bold** and <b>tags</b>");
+    expect(mine.querySelector("strong, b")).toBeNull();
+  });
+
+  it("renders a proposal's message as Markdown", async () => {
+    installFetch({
+      design: {
+        mode: "proposal",
+        message: "Two debaters, decided by **majority vote**.",
+        artifact: validArtifact(),
+        under_development: [],
+      },
+    });
+    const user = userEvent.setup();
+    renderChat({ configId: 5 });
+
+    await openPanel(user);
+    await sendMessage(user, "Design it");
+    const message = await screen.findByTestId("assistant-proposal-message");
+    expect(message.querySelector("strong")).toHaveTextContent("majority vote");
+  });
+
+  it("keeps request errors as plain text", async () => {
+    installFetch({ design: QUESTION });
+    useAssistantChatStore.getState().patchSession("5", {
+      turns: [
+        { kind: "message", role: "user", content: "hi" },
+        {
+          kind: "message",
+          role: "assistant",
+          content: "The assistant request failed: **boom**",
+          error: true,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderChat({ configId: 5 });
+
+    await openPanel(user);
+    const error = screen.getByTestId("assistant-turn-assistant");
+    expect(error).toHaveTextContent("The assistant request failed: **boom**");
+    expect(error.querySelector("strong")).toBeNull();
+  });
+});

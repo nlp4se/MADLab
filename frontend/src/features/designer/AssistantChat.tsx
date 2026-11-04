@@ -10,10 +10,12 @@ import {
 } from "lucide-react";
 
 import type { JsonObject, ProviderResponse } from "@/api";
+import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { cn, WRAP_TEXT } from "@/lib/utils";
 
 import {
   EMPTY_SESSION,
@@ -271,7 +273,12 @@ function ChatPanel({
               }}
             />
           ) : (
-            <MessageBubble key={i} role={turn.role} content={turn.content} />
+            <MessageBubble
+              key={i}
+              role={turn.role}
+              content={turn.content}
+              error={turn.error === true}
+            />
           ),
         )}
 
@@ -322,24 +329,40 @@ function ChatPanel({
 function MessageBubble({
   role,
   content,
+  error = false,
 }: {
   role: "user" | "assistant";
   content: string;
+  /** A request failure: shown as plain text, never as Markdown. */
+  error?: boolean;
 }) {
   const isUser = role === "user";
+  // Only the model's own replies render Markdown (task 11.16); the user's
+  // turns and error text stay literal.
+  const markdown = !isUser && !error;
   return (
     <div className={isUser ? "flex justify-end" : "flex justify-start"}>
-      <div
-        data-testid={`assistant-turn-${role}`}
-        className={
-          "max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm " +
-          (isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground")
-        }
-      >
-        {content}
-      </div>
+      {markdown ? (
+        <Markdown
+          data-testid={`assistant-turn-${role}`}
+          className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm text-foreground"
+        >
+          {content}
+        </Markdown>
+      ) : (
+        <div
+          data-testid={`assistant-turn-${role}`}
+          className={cn(
+            "max-w-[85%] rounded-lg px-3 py-2 text-sm",
+            WRAP_TEXT,
+            isUser
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-foreground",
+          )}
+        >
+          {content}
+        </div>
+      )}
     </div>
   );
 }
@@ -369,9 +392,12 @@ function ProposalCard({
       </div>
 
       {turn.message ? (
-        <p className="mb-2 whitespace-pre-wrap text-sm text-foreground">
+        <Markdown
+          className="mb-2 text-sm text-foreground"
+          data-testid="assistant-proposal-message"
+        >
           {turn.message}
-        </p>
+        </Markdown>
       ) : null}
 
       {turn.underDevelopment.length > 0 ? (

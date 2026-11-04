@@ -1129,6 +1129,50 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793814165325
       }
+    ],
+    "11.16 Render Markdown in model-generated text": [
+      {
+        "executionId": "06404e07-4bd9-40f4-9072-91b1e49c100c",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814548579
+      },
+      {
+        "executionId": "06404e07-4bd9-40f4-9072-91b1e49c100c",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814549504
+      },
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814972703
+      },
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793816289441
+      },
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793818128893
+      }
+    ],
+    "11.17 Fix: judge call fails on config 8, and failed instances lose their transcript": [
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814972898
+      },
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793814972988
+      },
+      {
+        "executionId": "49376dec-25a9-413f-bf2f-70fe2e8e98aa",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793816289352
+      }
     ]
   }
 }

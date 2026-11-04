@@ -532,6 +532,13 @@ function longContentDetail(): ExecutionDetail {
 function expectWraps(el: HTMLElement) {
   expect(el).toHaveClass("whitespace-pre-wrap", "break-words", "[overflow-wrap:anywhere]");
 }
+/**
+ * Markdown-rendered text (task 11.16): the root is a block container, so it
+ * wraps without `whitespace-pre-wrap` (newlines become <br>).
+ */
+function expectMarkdownWraps(el: HTMLElement) {
+  expect(el).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
+}
 function expectScrollsInCard(el: HTMLElement) {
   expect(el).toHaveClass("max-w-full");
   expect(el.className).toMatch(/overflow-(x-)?auto/);
@@ -556,7 +563,7 @@ describe("long content stays inside its card (task 11.15)", () => {
 
     const text = within(messages[0]).getByTestId("message-text");
     expect(text).toHaveTextContent(LONG_TOKEN);
-    expectWraps(text);
+    expectMarkdownWraps(text);
 
     const structured = within(messages[1]).getByTestId("message-structured");
     expect(structured.tagName).toBe("PRE");
@@ -572,7 +579,7 @@ describe("long content stays inside its card (task 11.15)", () => {
 
     const text = within(dialog).getAllByTestId("chat-message-text")[0];
     expect(text).toHaveTextContent(LONG_TOKEN);
-    expectWraps(text);
+    expectMarkdownWraps(text);
 
     const structured = within(dialog).getByTestId("chat-message-structured");
     expectScrollsInCard(structured);
@@ -581,5 +588,142 @@ describe("long content stays inside its card (task 11.15)", () => {
     expect(error).toHaveTextContent(LONG_ERROR);
     expect(error).toHaveClass("min-w-0");
     expectWraps(error);
+  });
+});
+
+/* ------------- failed instance keeps its call errors (task 11.17) --------- */
+
+const QUOTA_ERROR =
+  "model call for node 'judge_1' failed after 1 attempt(s): [rate limit, HTTP 429] " +
+  "You exceeded your current quota, please check your plan and billing details. " +
+  "q".repeat(300);
+
+function failedJudgeDetail(): ExecutionDetail {
+  const base = makeInstance();
+  const transcript = base.transcript as Record<string, unknown>;
+  const messages = transcript.messages as Record<string, unknown>[];
+  const detail = makeDetail(
+    makeInstance({
+      // The runner now persists the partial transcript of a failed instance.
+      transcript: {
+        ...transcript,
+        messages: [messages[0]],
+        decision: null,
+        errors: [{ node_id: "judge_1", round_index: 1, message: QUOTA_ERROR, attempts: 1 }],
+      } as ExecutionInstanceResult["transcript"],
+      final_decision: null,
+      metrics: null,
+      error:
+        "ExecutionError: judge node 'judge_1' failed to produce a decision after 1 attempt(s): " +
+        "[rate limit, HTTP 429] You exceeded your current quota (details in the transcript errors)",
+    }),
+  );
+  return { ...detail, status: "failed", error_count: 1 } as ExecutionDetail;
+}
+
+describe("failed instance shows its call errors (task 11.17)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("detail view: lists the call errors next to the instance error", async () => {
+    installFetch(failedJudgeDetail());
+    renderDetail();
+    const alert = await screen.findByTestId("instance-failed");
+    expect(alert).toHaveTextContent(/Instance failed/);
+    expect(alert).toHaveTextContent(/exceeded your current quota/);
+
+    const callErrors = within(alert).getByTestId("instance-call-errors");
+    const item = within(callErrors).getByRole("listitem");
+    expect(item).toHaveTextContent(/judge_1 · verdict · 1 attempt:/);
+    expect(item).toHaveTextContent(QUOTA_ERROR);
+    expectWraps(item);
+    // Listed once: the transcript's own error panel is folded into the alert.
+    expect(screen.queryByTestId("recoverable-errors")).not.toBeInTheDocument();
+    // The partial debate is still shown.
+    expect(screen.getAllByTestId("transcript-message")).toHaveLength(1);
+  });
+
+  it("chat replay: the failure alert names the participant and the provider error", async () => {
+    const dialog = await openChat(failedJudgeDetail());
+    const alert = within(dialog).getByTestId("instance-failed");
+    const item = within(within(alert).getByTestId("instance-call-errors")).getByRole("listitem");
+    expect(item).toHaveTextContent(/Chief Judge · verdict · 1 attempt:/);
+    expect(item).toHaveTextContent(QUOTA_ERROR);
+    expectWraps(item);
+  });
+});
+
+/* ------------------ Markdown in model-generated text (task 11.16) --------- */
+
+const BOLD_REPLY =
+  "**Functional (F).** The requirement specifies *what* the system does.\n\n- input\n- output";
+
+function markdownDetail(): ExecutionDetail {
+  const base = makeInstance();
+  const transcript = base.transcript as Record<string, unknown>;
+  const messages = transcript.messages as Record<string, unknown>[];
+  return makeDetail(
+    makeInstance({
+      transcript: {
+        ...transcript,
+        messages: [
+          { ...messages[0], content: BOLD_REPLY },
+          // JSON-only judge reply: stays raw in the detail view.
+          { ...messages[1], content: '{"label": "**NFR**"}', structured: { label: "**NFR**" } },
+        ],
+        decision: {
+          decision: "The debaters **agree**: it constrains *how* the system behaves, so it is NFR.",
+          authority: "judge_based",
+          resolution: "argument_evaluation",
+          detail: null,
+          structured: null,
+          undecided: false,
+        },
+      } as ExecutionInstanceResult["transcript"],
+    }),
+  );
+}
+
+function expectBoldDebater(text: HTMLElement) {
+  expect(text.querySelector("strong")).toHaveTextContent("Functional (F).");
+  expect(text.querySelector("em")).toHaveTextContent("what");
+  expect(text.querySelectorAll("li")).toHaveLength(2);
+  expect(text.textContent).not.toContain("**");
+}
+
+describe("Markdown in model-generated text (task 11.16)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("detail view: a **bold** debater message renders <strong>; JSON-only replies stay raw", async () => {
+    installFetch(markdownDetail());
+    renderDetail();
+    const list = await screen.findByTestId("instance-list");
+    const [debater, judge] = within(list).getAllByTestId("transcript-message");
+
+    expectBoldDebater(within(debater).getByTestId("message-text"));
+
+    const judgeText = within(judge).getByTestId("message-text");
+    expect(judgeText).toHaveTextContent('{"label": "**NFR**"}');
+    expect(judgeText.querySelector("strong")).toBeNull();
+
+    const body = within(list).getByTestId("decision-body");
+    expect(body.querySelector("strong")).toHaveTextContent("agree");
+    expect(body.querySelector("em")).toHaveTextContent("how");
+  });
+
+  it("chat replay: a **bold** debater message renders <strong>", async () => {
+    const dialog = await openChat(markdownDetail());
+    const debater = items(dialog).find((el) => el.dataset.nodeId === "debater_a")!;
+    expectBoldDebater(within(debater).getByTestId("chat-message-text"));
+
+    // The JSON-only reply keeps the 11.12 readable view and its raw text.
+    const judge = items(dialog).find((el) => el.dataset.nodeId === "judge_1")!;
+    const structured = within(judge).getByTestId("message-structured-body");
+    expect(structured.querySelector("strong")).toHaveTextContent("NFR");
+    expect(within(judge).getByText('{"label": "**NFR**"}')).toBeInTheDocument();
+
+    const decision = within(dialog).getByTestId("chat-final-decision");
+    expect(within(decision).getByTestId("decision-body").querySelector("strong")).toHaveTextContent(
+      "agree",
+    );
   });
 });

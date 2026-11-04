@@ -562,6 +562,31 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: long-content rendering (no horizontal overflow classes missing), new-config flow
     (open, edit, save -> POST then route), unsaved-changes guard, sidebar without the legend.
   - _Requirements: 6.1, 11.2, 13.3_
+
+- [x] 11.16 Render Markdown in model-generated text
+  - Agent messages in the execution detail view and the chat replay, text fields of structured
+    decisions, and design-assistant replies render Markdown (bold, italics, lists, headings, inline
+    code and code blocks, links, blockquotes, GFM tables) instead of showing raw `**`.
+  - Safe by default: no raw HTML, links open in a new tab with rel=noopener noreferrer, only
+    http(s)/mailto URLs. Use react-markdown + remark-gfm at pinned exact versions in one shared
+    `Markdown` component styled to match the app (compact spacing, wrapping, scrollable code
+    blocks, no overflow from 11.15).
+  - Raw text stays available (existing Raw reply / Structured disclosures); JSON-only replies keep
+    the 11.12 readable view. User-typed text (inputs, the user's own chat turns) is not rendered.
+  - Tests: bold/italic/list/code/table rendering, raw HTML not rendered, unsafe links stripped,
+    long content still wraps.
+  - _Requirements: 11.2, 12.2, 13.3_
+
+- [x] 11.17 Fix: judge call fails on config 8, and failed instances lose their transcript
+  - Bug: executions 5 and 6 (config 8, Gemini judge) fail with "judge node 'participant-3' failed to
+    produce a decision after retries; see transcript errors", but a failed instance stores no
+    transcript, so the errors and the debate are lost.
+  - Persist the partial transcript (messages, errors, notes) for failed instances and show the
+    transcript errors in the execution view next to the instance error.
+  - Find the root cause of the judge failure: rebuild the exact judge request from config 8 (judge
+    context from 11.14, response_format from 11.13) and reproduce it with one real call to the
+    configured judge provider. Fix it in the engine/provider layer, with an offline regression test.
+  - _Requirements: 3.5, 9.1, 9.5, 11.2_
 ```
 
 ---

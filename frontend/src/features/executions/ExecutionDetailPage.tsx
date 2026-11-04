@@ -24,6 +24,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Markdown } from "@/components/Markdown";
 import { Progress } from "@/components/ui/progress";
 import { cn, SCROLL_PRE, WRAP_TEXT } from "@/lib/utils";
 import { ConfigSummaryChips } from "@/features/configs/ConfigSummaryChips";
@@ -33,8 +34,10 @@ import type {
   JsonObject,
 } from "@/api";
 
+import { debateRoundCount } from "./chatTimeline";
 import { DebateChatDialog } from "./DebateChatDialog";
 import { DeleteExecutionDialog } from "./DeleteExecutionDialog";
+import { InstanceFailedAlert } from "./InstanceFailedAlert";
 import {
   aggregateMetrics,
   formatPercent,
@@ -42,7 +45,7 @@ import {
   perClassRows,
   StatusBadge,
 } from "./format";
-import { outputSchemaFromSnapshot } from "./decisionDisplay";
+import { outputSchemaFromSnapshot, structuredMessageBody } from "./decisionDisplay";
 import { DecisionContent } from "./DecisionView";
 import {
   parseTranscript,
@@ -496,21 +499,21 @@ function InstanceAccordion({
           {/* Resolved input (Req 11.2). */}
           <ResolvedInput instance={instance} transcript={transcript} />
   
-          {/* Hard, instance-level error. */}
+          {/* Hard, instance-level error, with the call errors that caused it
+              (task 11.17). */}
           {hasError ? (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
-            >
-              <p className="font-medium">Instance failed</p>
-              <p className={cn("mt-1", WRAP_TEXT)}>{instance.error}</p>
-            </div>
+            <InstanceFailedAlert
+              error={instance.error ?? ""}
+              callErrors={transcript?.errors ?? []}
+              rounds={transcript ? debateRoundCount(transcript) : undefined}
+            />
           ) : null}
   
           {transcript ? (
             <TranscriptView
               transcript={transcript}
               outputSchema={outputSchemaFromSnapshot(configSnapshot)}
+              showErrors={!hasError}
             />
           ) : !hasError ? (
             <p className="text-sm text-muted-foreground">
@@ -588,9 +591,12 @@ function InstanceMetrics({ metrics }: { metrics: JsonObject }) {
 function TranscriptView({
   transcript,
   outputSchema,
+  showErrors = true,
 }: {
   transcript: Transcript;
   outputSchema: unknown;
+  /** False when the instance-failed alert already lists the call errors. */
+  showErrors?: boolean;
 }) {
   const rounds = useMemo(
     () => messagesByRound(transcript.messages),
@@ -620,7 +626,7 @@ function TranscriptView({
       )}
 
       {/* Recoverable per-call errors (Req 10.6). */}
-      {transcript.errors.length > 0 ? (
+      {showErrors && transcript.errors.length > 0 ? (
         <div className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3">
           <h4 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
             <AlertTriangle className="size-3.5" aria-hidden />
@@ -684,9 +690,17 @@ function MessageCard({ message }: { message: TranscriptMessage }) {
         {message.usage ? <UsageChips usage={message.usage} /> : null}
       </div>
 
-      <p className={cn("text-sm", WRAP_TEXT)} data-testid="message-text">
-        {message.content}
-      </p>
+      {/* A reply that is just its structured JSON stays raw (the parsed
+          object is shown below); prose renders as Markdown (task 11.16). */}
+      {structuredMessageBody(message.content, message.structured) ? (
+        <p className={cn("text-sm", WRAP_TEXT)} data-testid="message-text">
+          {message.content}
+        </p>
+      ) : (
+        <Markdown className="text-sm" data-testid="message-text">
+          {message.content}
+        </Markdown>
+      )}
 
       {message.structured != null ? (
         <pre

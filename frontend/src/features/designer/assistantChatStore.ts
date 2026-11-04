@@ -18,7 +18,13 @@ import type { AssistantDesignResponse, AssistantMessage, JsonObject } from "@/ap
 
 /** A rendered chat turn: a plain message, or an assistant proposal card. */
 export type ChatTurn =
-  | { kind: "message"; role: "user" | "assistant"; content: string }
+  | {
+      kind: "message";
+      role: "user" | "assistant";
+      content: string;
+      /** A request failure shown as an assistant turn (rendered as plain text). */
+      error?: boolean;
+    }
   | {
       kind: "proposal";
       message: string;
@@ -142,6 +148,7 @@ export const useAssistantChatStore = create<AssistantChatState>((set, get) => {
         kind: "message",
         role: "assistant",
         content: `The assistant request failed: ${err.message}`,
+        error: true,
       }),
 
     markApplied: (key, index) => {

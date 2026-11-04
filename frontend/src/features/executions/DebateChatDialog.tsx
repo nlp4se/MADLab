@@ -15,6 +15,7 @@ import type {
   ProviderResponse,
 } from "@/api";
 import { roleIconUrl } from "@/assets/icons";
+import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,10 +34,12 @@ import {
   debateRoundCount,
   modelBadge,
   participantsFromSnapshot,
+  resolveParticipant,
   type ChatItem,
 } from "./chatTimeline";
 import { outputSchemaFromSnapshot, structuredMessageBody } from "./decisionDisplay";
 import { DecisionContent, DisplayValueView } from "./DecisionView";
+import { InstanceFailedAlert } from "./InstanceFailedAlert";
 import { parseTranscript, roleTheme, type TranscriptUsage } from "./transcript";
 
 /**
@@ -374,13 +377,13 @@ function DebateChatBody({
         ) : null}
 
         {instance.error && playback.shown >= playback.total ? (
-          <div
-            role="alert"
-            className="mt-4 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
-          >
-            <p className="font-medium">Instance failed</p>
-            <p className={cn("mt-1", WRAP_TEXT)}>{instance.error}</p>
-          </div>
+          <InstanceFailedAlert
+            className="mt-4"
+            error={instance.error}
+            callErrors={transcript?.errors ?? []}
+            labelFor={(nodeId) => resolveParticipant(participants, nodeId).label}
+            rounds={rounds}
+          />
         ) : null}
       </div>
     </>
@@ -581,9 +584,7 @@ function MessageBubble({
               </details>
             </>
           ) : (
-            <p className={WRAP_TEXT} data-testid="chat-message-text">
-              {message.content}
-            </p>
+            <Markdown data-testid="chat-message-text">{message.content}</Markdown>
           )}
           {message.structured != null ? (
             <details className="mt-2 text-xs">
