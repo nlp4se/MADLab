@@ -329,6 +329,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: backend route (mocked provider) for the question vs. proposal envelopes and artifact
     validation; frontend component test for the chat flow + apply-to-canvas.
   - _Requirements: 4.1, 4.2, 6.1, 6.8, 7.3, 8.6, 12.2_
+
+- [x] 11.2 Deletable edges and persisted Start/End IO connections
+  - Canvas: right-click any edge (participant edges and Start/End connectors) opens a context menu
+    with Delete. Start -> node and node -> End connectors can be re-added by dragging.
+  - Artifact: optional `interaction.topology.entry_nodes` / `exit_nodes` (null = default). The
+    default derivation matches engine behaviour: Start feeds every speaking participant; End
+    receives from the judge (judge-based) or the aggregated debaters (otherwise). Validators: ids
+    reference existing nodes; lists non-empty when set; judge-based exit_nodes must include a judge.
+  - Engine: only entry nodes receive the task input; only exit nodes' outputs feed the decision
+    (deciding judge = first judge in exit_nodes for judge-based). Null keeps current behaviour, so
+    gold cases and existing configs are unchanged.
+  - Tests: schema validation, engine honouring overrides, canvas derivation + delete/re-add.
+  - _Requirements: 2.1, 3.1, 6.2, 6.4, 6.8, 9.4_
 ```
 
 ---

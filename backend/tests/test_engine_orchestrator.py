@@ -274,6 +274,180 @@ def test_re_binary_gold_case_runs_end_to_end():
     assert decision.decision == {"class": "NF"}
 
 
+# ---------------------------------------------------------------------------
+# Start/End IO connections: topology.entry_nodes / exit_nodes (task 11.2)
+# ---------------------------------------------------------------------------
+
+
+def _io_config(
+    *,
+    roles: dict[str, list[str]],
+    authority: str = "collective",
+    resolution: str = "majority_vote",
+    max_rounds: int = 1,
+    entry_nodes=None,
+    exit_nodes=None,
+) -> MADConfig:
+    """A config over ``roles`` (id -> roles) with optional IO overrides.
+
+    Every node's system prompt is ``"You are <id>."`` so a responder (and the
+    recorded calls) can tell nodes apart. The input template is fixed so the
+    "Task: ..." line is easy to detect.
+    """
+    nodes = [
+        ParticipantNode(id=i, label=i.upper(), roles=r, system_prompt=f"You are {i}.")
+        for i, r in roles.items()
+    ]
+    ids = [n.id for n in nodes]
+    topology = fully_connected_topology(ids).model_copy(
+        update={"entry_nodes": entry_nodes, "exit_nodes": exit_nodes}
+    )
+    config = MADConfig(
+        name="io",
+        participants=Participants(nodes=nodes),
+        interaction=Interaction(
+            topology=topology,
+            protocol=Protocol(
+                mechanism="sequential", max_rounds=max_rounds, ordering="fixed", order=ids
+            ),
+            format=Format(content=ContentSpec(strategy="verbatim")),
+        ),
+        agreement=Agreement(authority=authority, resolution=resolution),
+    )
+    config.input_spec.template = "Classify: {{x}}"
+    config.input_spec.placeholders = ["x"]
+    return _bind(config)
+
+
+def _node_of(messages: list[Message]) -> str:
+    """Recover the calling node id from its ``You are <id>.`` system prompt."""
+    text = _system_text(messages)
+    return text.split("You are ", 1)[1].split(".", 1)[0]
+
+
+def _votes(table: dict[str, str]):
+    """Responder replying with ``table[node_id]``."""
+    return lambda messages, model, params, schema: table[_node_of(messages)]
+
+
+def _task_receivers(client: MockModelClient) -> set[str]:
+    """Node ids whose (debate-turn) system prompt carried the task line."""
+    return {
+        _node_of(call.messages)
+        for call in client.calls
+        if "Task: Classify: req" in _system_text(call.messages)
+    }
+
+
+def test_entry_nodes_none_gives_every_speaker_the_task():
+    """Default (entry_nodes=None): every speaking participant receives the input."""
+    config = _io_config(roles={"a": ["debater"], "b": ["debater"], "c": ["debater"]})
+    client = MockModelClient(responder=lambda *a: "F")
+    run_debate(config, {"x": "req"}, _registry(client), sleep=_no_sleep)
+    assert _task_receivers(client) == {"a", "b", "c"}
+
+
+def test_entry_nodes_restrict_which_system_prompts_contain_the_task():
+    """Only entry nodes get the "Task: <input>" line in their system prompt."""
+    config = _io_config(
+        roles={"a": ["debater"], "b": ["debater"], "c": ["debater"]},
+        entry_nodes=["a"],
+    )
+    client = MockModelClient(responder=lambda *a: "F")
+    run_debate(config, {"x": "req"}, _registry(client), sleep=_no_sleep)
+
+    assert _task_receivers(client) == {"a"}
+    # Non-entry nodes still keep their own prompt; only the task line is gone.
+    b_call = next(c for c in client.calls if _node_of(c.messages) == "b")
+    assert _system_text(b_call.messages).strip() == "You are b."
+
+
+def test_exit_nodes_restrict_collective_aggregation():
+    """Collective majority aggregates only the exit nodes' latest outputs."""
+    roles = {"a": ["debater"], "b": ["debater"], "c": ["debater"]}
+    table = {"a": "F", "b": "NF", "c": "NF"}
+
+    default = run_debate(
+        _io_config(roles=roles), {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert default.decision.decision == "NF"  # 2 of 3 debaters
+
+    restricted = run_debate(
+        _io_config(roles=roles, exit_nodes=["a"]), {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert restricted.decision.decision == "F"  # only 'a' feeds End
+
+
+def test_exit_nodes_filter_the_early_consensus_probe():
+    """The consensus early-stop probe uses the same exit-filtered set."""
+    roles = {"a": ["debater"], "b": ["debater"]}
+    table = {"a": "yes", "b": "no"}
+
+    default = run_debate(
+        _io_config(roles=roles, resolution="consensus", max_rounds=3), {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert default.rounds == 3  # a and b never agree
+    assert default.decision.undecided is True
+
+    restricted = run_debate(
+        _io_config(roles=roles, resolution="consensus", max_rounds=3, exit_nodes=["a"]),
+        {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert restricted.rounds == 1  # 'a' alone is unanimous -> early stop
+    assert restricted.decision.decision == "yes"
+
+
+def test_judge_based_uses_first_judge_listed_in_exit_nodes():
+    """judge_based: the deciding judge is the first judge listed in exit_nodes."""
+    roles = {"a": ["debater"], "j1": ["judge"], "j2": ["judge"]}
+    table = {"a": "argument", "j1": "J1", "j2": "J2"}
+
+    default = run_debate(
+        _io_config(roles=roles, authority="judge_based", resolution="argument_evaluation"),
+        {"x": "req"}, _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert default.decision.decision == "J1"  # first judge in declaration order
+
+    listed = run_debate(
+        _io_config(
+            roles=roles, authority="judge_based", resolution="argument_evaluation",
+            exit_nodes=["a", "j2"],
+        ),
+        {"x": "req"}, _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert listed.decision.decision == "J2"
+    assert [m.node_id for m in listed.messages if m.role == "judge"] == ["j2"]
+
+
+def test_hybrid_exit_nodes_without_a_judge_disable_the_fallback():
+    """hybrid: a tie escalates to the judge only if the judge is an exit node."""
+    roles = {"a": ["debater"], "b": ["debater"], "j": ["judge"]}
+    table = {"a": "F", "b": "NF", "j": "JUDGED"}
+
+    default = run_debate(
+        _io_config(roles=roles, authority="hybrid"), {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert default.decision.decision == "JUDGED"  # tie -> fell back to judge
+
+    no_judge = run_debate(
+        _io_config(roles=roles, authority="hybrid", exit_nodes=["a", "b"]), {"x": "req"},
+        _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert no_judge.decision.undecided is True
+    assert all(m.node_id != "j" for m in no_judge.messages)
+
+    with_judge = run_debate(
+        _io_config(roles=roles, authority="hybrid", exit_nodes=["a", "b", "j"]),
+        {"x": "req"}, _registry(MockModelClient(responder=_votes(table))), sleep=_no_sleep,
+    )
+    assert with_judge.decision.decision == "JUDGED"
+
+
 def test_retry_policy_delay_schedule():
     """RetryPolicy backoff grows exponentially and is capped."""
     policy = RetryPolicy(max_attempts=5, base_delay_s=1.0, backoff_factor=2.0, max_delay_s=5.0)

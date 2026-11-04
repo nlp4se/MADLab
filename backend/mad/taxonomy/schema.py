@@ -163,7 +163,22 @@ class Edge(_Base):
 
 
 class Topology(_Base):
-    """Communication graph ``G=(V,E)`` and its adaptability."""
+    """Communication graph ``G=(V,E)`` and its adaptability.
+
+    ``entry_nodes`` / ``exit_nodes`` are the optional, persisted Start/End IO
+    connections drawn on the designer canvas:
+
+    * ``entry_nodes`` — participants that receive the task input in their
+      system prompt. ``None`` (default) = every participant that speaks in the
+      rounds receives it.
+    * ``exit_nodes`` — participants whose outputs form the final decision.
+      ``None`` (default) = the judge decides (``judge_based``) or the debaters'
+      latest outputs are aggregated (otherwise).
+
+    Both default to ``None`` so existing configs are unchanged (no schema
+    version bump). When set, each must be a non-empty list of existing node ids
+    (see :class:`MADConfig` validators).
+    """
 
     adaptability: Literal["static", "dynamic"] = "static"
     dynamic_policy: Optional[dict[str, Any]] = None
@@ -174,6 +189,8 @@ class Topology(_Base):
         Literal["chain", "ring", "star", "tree", "layered", "sparse", "bipartite"]
     ] = None
     edges: list[Edge] = Field(default_factory=list)
+    entry_nodes: Optional[list[str]] = None
+    exit_nodes: Optional[list[str]] = None
 
 
 class Phase(_Base):
@@ -373,6 +390,38 @@ class MADConfig(_Base):
                 raise ValueError(
                     "judge_based authority requires at least one node with the "
                     "'judge' role"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _check_io_nodes(self) -> "MADConfig":
+        """Validate the optional Start/End IO connections (entry/exit nodes)."""
+        node_ids = {n.id for n in self.participants.nodes}
+        topo = self.interaction.topology
+        for field_name in ("entry_nodes", "exit_nodes"):
+            refs = getattr(topo, field_name)
+            if refs is None:
+                continue
+            if len(refs) == 0:
+                raise ValueError(
+                    f"interaction.topology.{field_name} must be non-empty when "
+                    f"set; connect at least one participant or reset it to null "
+                    f"(default)"
+                )
+            for ref in refs:
+                if ref not in node_ids:
+                    raise ValueError(
+                        f"interaction.topology.{field_name} entry '{ref}' does not "
+                        f"reference an existing participant node"
+                    )
+        if self.agreement.authority == "judge_based" and topo.exit_nodes is not None:
+            judge_ids = {
+                n.id for n in self.participants.nodes if "judge" in n.roles
+            }
+            if not any(ref in judge_ids for ref in topo.exit_nodes):
+                raise ValueError(
+                    "judge_based authority requires interaction.topology.exit_nodes "
+                    "to include at least one node with the 'judge' role"
                 )
         return self
 

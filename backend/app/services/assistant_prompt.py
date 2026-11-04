@@ -119,6 +119,8 @@ _SCHEMA_SKELETON: dict[str, Any] = {
             "edges": [
                 {"source": "<node id>", "target": "<node id>", "directed": True}
             ],
+            "entry_nodes": None,
+            "exit_nodes": None,
         },
         "protocol": {
             "mechanism": "sequential|simultaneous|hybrid",
@@ -155,6 +157,12 @@ Key rules a MAD designer must respect (enforce these so the artifact validates):
   custom role as `custom:<name>`).
 - Edges in `interaction.topology.edges[]` set message VISIBILITY (who can see
   whom), NOT turn order. `source` and `target` must reference existing node ids.
+- `interaction.topology.entry_nodes` / `exit_nodes` are the Start/End IO
+  connections; leave both null by default (null = every speaking participant
+  receives the input, and the decision comes from the judge or the aggregated
+  debaters). Set them to non-empty lists of existing node ids only when the user
+  wants to restrict who gets the input or whose outputs decide; with
+  `judge_based`, `exit_nodes` must include a judge.
 - Turn order and rounds live in `interaction.protocol`: `max_rounds` controls
   how many rounds run; `order` lists node ids for `fixed` ordering.
 - A judge node is a node whose `roles` include `judge`. If

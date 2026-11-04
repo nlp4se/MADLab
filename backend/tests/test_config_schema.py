@@ -210,6 +210,79 @@ def test_judge_based_accepts_judge_node():
 
 
 # ---------------------------------------------------------------------------
+# Validator: Start/End IO connections (topology.entry_nodes / exit_nodes)
+# ---------------------------------------------------------------------------
+
+_IO_NODES = {
+    "nodes": [
+        {"id": "alice", "label": "Alice", "roles": ["debater"]},
+        {"id": "bob", "label": "Bob", "roles": ["debater"]},
+        {"id": "jury", "label": "Jury", "roles": ["judge"]},
+    ]
+}
+
+
+def test_io_nodes_default_to_none():
+    cfg = _minimal_config()
+    assert cfg.interaction.topology.entry_nodes is None
+    assert cfg.interaction.topology.exit_nodes is None
+
+
+def test_io_nodes_accept_existing_ids_and_round_trip():
+    cfg = _minimal_config(
+        participants=_IO_NODES,
+        interaction={"topology": {"entry_nodes": ["alice"], "exit_nodes": ["bob"]}},
+    )
+    assert cfg.interaction.topology.entry_nodes == ["alice"]
+    again = MADConfig.model_validate(cfg.model_dump())
+    assert again.interaction.topology.exit_nodes == ["bob"]
+
+
+@pytest.mark.parametrize("field", ["entry_nodes", "exit_nodes"])
+def test_io_nodes_must_reference_existing_nodes(field):
+    with pytest.raises(ValidationError) as exc:
+        _minimal_config(
+            participants=_IO_NODES,
+            interaction={"topology": {field: ["alice", "ghost"]}},
+        )
+    assert f"{field} entry 'ghost' does not reference an existing participant node" in str(
+        exc.value
+    )
+
+
+@pytest.mark.parametrize("field", ["entry_nodes", "exit_nodes"])
+def test_io_nodes_must_be_non_empty_when_set(field):
+    with pytest.raises(ValidationError) as exc:
+        _minimal_config(participants=_IO_NODES, interaction={"topology": {field: []}})
+    assert f"interaction.topology.{field} must be non-empty" in str(exc.value)
+
+
+def test_judge_based_exit_nodes_must_include_a_judge():
+    with pytest.raises(ValidationError) as exc:
+        _minimal_config(
+            participants=_IO_NODES,
+            interaction={"topology": {"exit_nodes": ["alice", "bob"]}},
+            agreement={"authority": "judge_based"},
+        )
+    assert "exit_nodes to include at least one node with the 'judge' role" in str(
+        exc.value
+    )
+    cfg = _minimal_config(
+        participants=_IO_NODES,
+        interaction={"topology": {"exit_nodes": ["alice", "jury"]}},
+        agreement={"authority": "judge_based"},
+    )
+    assert cfg.interaction.topology.exit_nodes == ["alice", "jury"]
+
+
+def test_io_node_error_surfaces_as_field_error():
+    with pytest.raises(ValidationError) as exc:
+        _minimal_config(participants=_IO_NODES, interaction={"topology": {"exit_nodes": []}})
+    fields = validation_error_to_fields(exc.value)
+    assert any("exit_nodes must be non-empty" in f["message"] for f in fields)
+
+
+# ---------------------------------------------------------------------------
 # Validator 5: weighted_vote / scoring require resolution_params
 # ---------------------------------------------------------------------------
 

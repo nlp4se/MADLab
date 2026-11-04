@@ -180,7 +180,7 @@ def run_debate(
 
         # Early consensus stop: resolve the round's debater outputs and break if
         # a consensus-style agreement has confidently settled.
-        if _should_stop_after_round(config.agreement, transcript):
+        if _should_stop_after_round(config.agreement, transcript, config):
             break
 
     transcript.rounds = executed_rounds
@@ -267,7 +267,10 @@ def _run_agent_turn(
         node=node.id,
         format_spec=config.interaction.format,
         graph=graph,
-        system_prompt=_compose_system_prompt(node, transcript.resolved_input),
+        system_prompt=_compose_system_prompt(
+            node,
+            transcript.resolved_input if _receives_input(config, node.id) else "",
+        ),
         summarizer=summarizer,
     )
     transcript.add_notes(assembled.notes)
@@ -384,7 +387,9 @@ def _resolve_final_agreement(
 
 
 def _should_stop_after_round(
-    agreement: Agreement, transcript: Transcript
+    agreement: Agreement,
+    transcript: Transcript,
+    config: Optional[MADConfig] = None,
 ) -> bool:
     """Decide whether a consensus-style agreement has settled early.
 
@@ -393,12 +398,20 @@ def _should_stop_after_round(
     outputs yields a confident (``undecided == False``) decision. Vote/score
     resolutions always decide, so they never short-circuit here — they run the
     full planned horizon and resolve once at the end.
+
+    When the config sets ``interaction.topology.exit_nodes`` the probe uses the
+    same exit-filtered set as the final resolution (:func:`_debater_outputs`);
+    with ``exit_nodes`` unset it probes every latest-round output (unchanged
+    legacy behaviour).
     """
     if agreement.resolution not in _CONSENSUS_STOP_RESOLUTIONS:
         return False
-    outputs = [
-        _message_to_output(m) for m in transcript.latest_round_outputs()
-    ]
+    if config is not None and config.interaction.topology.exit_nodes is not None:
+        outputs = _debater_outputs(transcript, config)
+    else:
+        outputs = [
+            _message_to_output(m) for m in transcript.latest_round_outputs()
+        ]
     if not outputs:
         return False
     try:
@@ -415,14 +428,19 @@ def _debater_outputs(
 
     Uses the latest round that produced messages; judge/summarizer turns are
     excluded so collective strategies aggregate only the debaters' positions.
+    When ``interaction.topology.exit_nodes`` is set, only the listed nodes'
+    outputs are kept (the End connectors on the canvas); ``None`` keeps every
+    debater.
     """
     judge_ids = _role_node_ids(config, "judge")
     summarizer_ids = _role_node_ids(config, "summarizer")
     excluded = judge_ids | summarizer_ids
+    exit_nodes = config.interaction.topology.exit_nodes
+    allowed = set(exit_nodes) if exit_nodes is not None else None
     return [
         _message_to_output(m)
         for m in transcript.latest_round_outputs()
-        if m.node_id not in excluded
+        if m.node_id not in excluded and (allowed is None or m.node_id in allowed)
     ]
 
 
@@ -452,11 +470,13 @@ def _make_judge_fn(
 ):
     """Build the judge callable the agreement layer invokes, or ``None``.
 
-    Wires the first ``judge``-role node to a model call that receives the debate
-    context and returns the judge's reply (text or structured). ``None`` when the
-    config has no judge node, so the agreement layer can report the mis-wiring.
+    Wires the deciding judge (see :func:`_deciding_judge`) to a model call that
+    receives the debate context and returns the judge's reply (text or
+    structured). ``None`` when there is no deciding judge, so the agreement
+    layer can report the mis-wiring (``judge_based``) or stay undecided
+    (``hybrid`` fallback).
     """
-    judge_node = _first_role_node(config, "judge")
+    judge_node = _deciding_judge(config)
     if judge_node is None:
         return None
 
@@ -557,8 +577,10 @@ def _compose_system_prompt(node: ParticipantNode, resolved_input: str) -> str:
 
     Precedence: an explicit ``node.system_prompt`` is the base; the persona's
     background/personality/stance are appended as labelled lines when set; the
-    resolved instance input (the debate task) is appended last so every agent
-    sees what it is debating. All parts are optional; the result may be empty.
+    resolved instance input (the debate task) is appended last so the agent
+    sees what it is debating. Callers pass an empty ``resolved_input`` for nodes
+    that are not entry nodes (see :func:`_receives_input`). All parts are
+    optional; the result may be empty.
     """
     parts: list[str] = []
     if node.system_prompt:
@@ -616,6 +638,48 @@ def _first_role_node(config: MADConfig, role: str) -> Optional[ParticipantNode]:
     """Return the first node carrying ``role`` in declaration order, or ``None``."""
     for node in config.participants.nodes:
         if role in node.roles:
+            return node
+    return None
+
+
+def _receives_input(config: MADConfig, node_id: str) -> bool:
+    """``True`` if ``node_id`` gets the "Task: <input>" line in its system prompt.
+
+    With ``interaction.topology.entry_nodes`` unset (``None``) every speaking
+    participant receives the task input (legacy behaviour). When set, only the
+    listed entry nodes receive it; the others only see what their predecessors
+    send them. The judge's decision context (:func:`_judge_context`) always
+    carries the task, independent of ``entry_nodes``.
+    """
+    entry_nodes = config.interaction.topology.entry_nodes
+    return entry_nodes is None or node_id in entry_nodes
+
+
+def _deciding_judge(config: MADConfig) -> Optional[ParticipantNode]:
+    """Return the judge node the agreement layer calls, or ``None``.
+
+    Rule (applies uniformly to ``judge_based`` and to ``hybrid``'s judge
+    fallback; ``collective`` never calls the judge):
+
+    * ``interaction.topology.exit_nodes`` unset -> the first ``judge``-role node
+      in declaration order (legacy behaviour).
+    * ``exit_nodes`` set -> the first ``judge``-role node *listed in*
+      ``exit_nodes`` (in list order). If no listed node is a judge there is no
+      deciding judge: ``hybrid`` then resolves on the exit debaters' votes only
+      (an inconclusive vote stays ``undecided``), and ``judge_based`` cannot
+      occur because schema validation requires a judge in its ``exit_nodes``.
+
+    For ``hybrid`` the collective vote step aggregates the exit nodes that are
+    debaters (see :func:`_debater_outputs`), so the End connectors on the
+    canvas name both the voters and the fallback judge.
+    """
+    exit_nodes = config.interaction.topology.exit_nodes
+    if exit_nodes is None:
+        return _first_role_node(config, "judge")
+    nodes_by_id = {n.id: n for n in config.participants.nodes}
+    for ref in exit_nodes:
+        node = nodes_by_id.get(ref)
+        if node is not None and "judge" in node.roles:
             return node
     return None
 

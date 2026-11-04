@@ -906,6 +906,18 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793787233415
       }
+    ],
+    "11.2 Deletable edges and persisted Start/End IO connections": [
+      {
+        "executionId": "914858d3-8bf0-42fb-ad5e-4d4456d04d5d",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793788388359
+      },
+      {
+        "executionId": "914858d3-8bf0-42fb-ad5e-4d4456d04d5d",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793789231673
+      }
     ]
   }
 }
