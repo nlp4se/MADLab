@@ -169,6 +169,39 @@ def test_update_artifact_revalidated(client: TestClient):
     assert resp.json()["artifact"]["interaction"]["protocol"]["mechanism"] == "simultaneous"
 
 
+def test_create_with_defaults_has_starter_input(client: TestClient):
+    """Task 11.10: a blank config starts with a `{{input}}` field labelled Input."""
+    body = client.post(f"{API_PREFIX}/configs", json={"name": "Blank"}).json()
+    assert body["artifact"]["input_spec"] == {
+        "template": "{{input}}",
+        "placeholders": ["input"],
+        "ad_hoc_fields": [{"key": "input", "label": "Input"}],
+    }
+
+
+def test_create_from_artifact_keeps_its_input_spec(client: TestClient):
+    """The starter input applies to blank creates only, never to a given artifact."""
+    artifact = export_config(templates.build_gold_case("chateval_s1"))
+    artifact["input_spec"] = {"template": "", "placeholders": [], "ad_hoc_fields": []}
+    body = client.post(
+        f"{API_PREFIX}/configs", json={"name": "Empty input", "artifact": artifact}
+    ).json()
+    assert body["artifact"]["input_spec"]["template"] == ""
+
+
+def test_update_artifact_syncs_row_name_and_description(client: TestClient):
+    """Task 11.10: the designer saves the renamed artifact; the list row follows."""
+    created = client.post(f"{API_PREFIX}/configs", json={"name": "Old name"}).json()
+    cid = created["id"]
+    artifact = {**created["artifact"], "name": "New name", "description": "Why"}
+    resp = client.put(f"{API_PREFIX}/configs/{cid}", json={"artifact": artifact})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "New name"
+    row = next(r for r in _configs(client) if r["id"] == cid)
+    assert row["name"] == "New name"
+    assert row["description"] == "Why"
+
+
 def test_update_missing_returns_404(client: TestClient):
     resp = client.put(f"{API_PREFIX}/configs/999999", json={"name": "x"})
     assert resp.status_code == 404

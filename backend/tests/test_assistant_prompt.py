@@ -32,3 +32,15 @@ def test_prompt_states_interaction_and_agreement_rules():
     assert "With `judge_based` the judge's reply IS the decision" in prompt
     assert "needs a node with the `summarizer`" in prompt
     assert "do not propose `grouped`" in prompt
+
+
+def test_prompt_documents_input_spec():
+    """Task 11.10: proposals keep or set a sensible, non-empty input_spec."""
+    prompt = build_system_prompt()
+    assert "`input_spec` is the task every run starts from" in prompt
+    # The format() escaping yields literal double-brace placeholders.
+    assert "`{{name}}` placeholders" in prompt
+    assert "use `{{input}}` with the label \"Input\"" in prompt
+    assert "NEVER leave `template` empty" in prompt
+    assert "keep a non-empty existing `input_spec` unchanged" in prompt
+    assert '"Task: <resolved template>"' in prompt

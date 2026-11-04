@@ -144,7 +144,7 @@ _SCHEMA_SKELETON: dict[str, Any] = {
         "output_schema": None,
     },
     "input_spec": {
-        "template": "<prompt with {{placeholders}}>",
+        "template": "<non-empty task text, e.g. Debate this topic: {{topic}}>",
         "placeholders": ["topic"],
         "ad_hoc_fields": [{"key": "topic", "label": "Topic"}],
     },
@@ -213,6 +213,21 @@ Key rules a MAD designer must respect (enforce these so the artifact validates):
 - Metadata signals, under-development values, and memory modes other than
   `short_term` are configurable but gate execution; prefer executable values
   unless the user asks otherwise.
+- `input_spec` is the task every run starts from. `template` is text with
+  `{{{{name}}}}` placeholders (letters, digits, `_`, `.`, `-` or spaces) that each
+  run fills in (single-run form values or mapped CSV columns); `placeholders`
+  lists exactly the names the template uses, in order; `ad_hoc_fields` has one
+  `{{"key": "<placeholder>", "label": "<form label>"}}` per placeholder. The
+  engine appends "Task: <resolved template>" to the system prompt of the entry
+  participants (the Start connectors), and judges see the same Task line at the
+  top of their decision context.
+  - NEVER leave `template` empty: the participants would get no task and the
+    run view cannot launch the configuration.
+  - When editing, keep a non-empty existing `input_spec` unchanged unless the
+    user asks to change it; if it is empty, set a sensible one.
+  - For a new design, set a template that fits the debate (e.g.
+    `Classify this requirement: {{{{requirement}}}}`); when the task is unknown,
+    use `{{{{input}}}}` with the label "Input".
 - The top-level `ui` field is presentation-only canvas layout (node positions,
   edge bends); the engine ignores it. Never invent it; when editing, keep it
   unchanged.

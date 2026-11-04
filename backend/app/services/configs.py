@@ -49,7 +49,7 @@ from app.schemas.configs import (
 from app.services.providers import normalize_base_model_families
 from mad.errors import ConfigValidationError
 from mad.taxonomy import templates
-from mad.taxonomy.schema import MADConfig
+from mad.taxonomy.schema import AdHocField, InputSpec, MADConfig
 from mad.taxonomy.version import export_config, import_config
 
 # The built-in gold/template configs seeded on first run (Req 5.7). Keyed by the
@@ -205,7 +205,11 @@ def create_config(
     artifact's own values when provided.
     """
     if artifact is None:
-        model = MADConfig(name=name or "New configuration", description=description or "")
+        model = MADConfig(
+            name=name or "New configuration",
+            description=description or "",
+            input_spec=_starter_input_spec(),
+        )
     else:
         model = _validate_artifact(artifact)
         if name is not None:
@@ -214,6 +218,21 @@ def create_config(
             model.description = description
 
     return _persist_new(session, model)
+
+
+def _starter_input_spec() -> InputSpec:
+    """The input of a NEW blank configuration (task 11.10).
+
+    One ``{{input}}`` field labelled "Input", so a fresh config is runnable
+    as soon as it has participants. Only used when creating without an
+    artifact; stored/imported/copied artifacts keep their own ``input_spec``
+    (the schema default stays empty so existing configs are never rewritten).
+    """
+    return InputSpec(
+        template="{{input}}",
+        placeholders=["input"],
+        ad_hoc_fields=[AdHocField(key="input", label="Input")],
+    )
 
 
 def _persist_new(session: Session, model: MADConfig) -> ConfigDetail:
