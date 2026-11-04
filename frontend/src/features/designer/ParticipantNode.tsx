@@ -2,16 +2,19 @@
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { roleIconUrl } from "@/assets/icons";
-import { Badge } from "@/components/ui/badge";
 import { DIMENSION_THEMES } from "@/taxonomy/dimensions";
 import { cn } from "@/lib/utils";
+import { useProvidersQuery } from "./useProviders";
+import { providerColor, roleColor } from "./nodeStyle";
 
 /**
  * Data carried by a participant node on the canvas (Req 6.1, 6.7).
  *
  * A participant renders with a role icon (from the shared `role/*` SVGs) and a
- * base-model badge (provider + model_key). Colouring uses the Participants
- * dimension theme so the three dimensions stay visually distinct (Req 6.6).
+ * base-model badge. The node BODY is tinted by the participant's primary ROLE
+ * and the model badge by its PROVIDER, so roles and providers are each visually
+ * distinct across the graph. The provider is shown by NAME (resolved from the
+ * configured providers) rather than its opaque database id.
  *
  * The left handle is the INPUT (incoming messages) and the right handle is the
  * OUTPUT (outgoing messages). The "in"/"out" captions sit ABOVE each port (not
@@ -28,8 +31,8 @@ export interface ParticipantNodeData {
 const PARTICIPANTS = DIMENSION_THEMES.participants;
 
 /**
- * Pick the primary role for the icon: prefer a known shared-icon role, else the
- * first role, else "debater".
+ * Pick the primary role for the icon/colour: prefer a known shared-icon role,
+ * else the first role, else "debater".
  */
 function primaryRole(roles: string[]): string {
   const known = roles.find((r) => roleIconUrl(r) !== undefined);
@@ -48,22 +51,39 @@ function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeD
   const iconUrl = roleIconUrl(role);
   const modelLabel = data.modelKey ?? "no model";
 
+  // Resolve the provider id -> name + kind from the configured providers so the
+  // badge shows a human name (not the opaque DB id) and a provider-specific
+  // colour. Falls back to the id when the provider can't be resolved.
+  const providers = useProvidersQuery().data ?? [];
+  const provider = providers.find(
+    (p) => String(p.id) === String(data.providerId),
+  );
+  const providerName = provider?.name ?? (data.providerId ? `#${data.providerId}` : null);
+
+  const role_c = roleColor(role);
+  const prov_c = provider
+    ? providerColor(provider.kind || provider.name)
+    : data.providerId
+      ? providerColor(String(data.providerId))
+      : null;
+
   return (
     <div
-      className={cn(
-        "relative min-w-[200px] rounded-lg border-2 bg-background px-3 py-3 shadow-sm transition-colors",
-        selected
-          ? "border-participants ring-2 ring-participants"
-          : "border-participants/40",
-      )}
+      className="relative min-w-[200px] rounded-lg border-2 bg-background px-3 py-3 shadow-sm transition-shadow"
+      style={{
+        borderColor: role_c.solid,
+        boxShadow: selected ? `0 0 0 3px ${role_c.soft}` : undefined,
+      }}
       data-testid="participant-node"
+      data-role={role}
     >
       {/* INPUT port (left): incoming messages. Caption sits above the handle. */}
       <Handle
         id="in"
         type="target"
         position={Position.Left}
-        className={cn(HANDLE_CLASS, "!bg-muted-foreground")}
+        className={cn(HANDLE_CLASS)}
+        style={{ background: "hsl(var(--muted-foreground))" }}
       />
       <span className={cn(PORT_LABEL_CLASS, "left-0 text-muted-foreground")}>
         in
@@ -74,48 +94,64 @@ function ParticipantNodeComponent({ data, selected }: NodeProps<ParticipantNodeD
         id="out"
         type="source"
         position={Position.Right}
-        className={cn(HANDLE_CLASS, "!bg-participants")}
+        className={cn(HANDLE_CLASS)}
+        style={{ background: role_c.solid }}
       />
-      <span className={cn(PORT_LABEL_CLASS, "right-0 text-participants")}>
+      <span
+        className={cn(PORT_LABEL_CLASS, "right-0")}
+        style={{ color: role_c.solid }}
+      >
         out
       </span>
 
       <div className="flex items-center gap-2.5">
         <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-participants-muted"
+          className="flex size-9 shrink-0 items-center justify-center rounded-md"
+          style={{ background: role_c.soft, color: role_c.solid }}
           aria-hidden
         >
           {iconUrl ? (
             <img src={iconUrl} alt="" className="size-5" />
           ) : (
-            <PARTICIPANTS.icon className="size-5 text-participants" />
+            <PARTICIPANTS.icon className="size-5" />
           )}
         </span>
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold leading-tight" title={data.label}>
             {data.label}
           </p>
-          <p className="truncate text-[11px] capitalize leading-tight text-muted-foreground">
+          <p
+            className="truncate text-[11px] font-medium capitalize leading-tight"
+            style={{ color: role_c.solid }}
+          >
             {data.roles.join(", ") || "debater"}
           </p>
         </div>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1">
-        <Badge
-          variant="participants"
-          className="max-w-full gap-1 py-0 text-[11px] font-normal"
+        <span
+          className="inline-flex max-w-full items-center gap-1 truncate rounded-full border px-2 py-0.5 text-[11px] font-medium"
+          style={
+            prov_c
+              ? {
+                  borderColor: prov_c.solid,
+                  background: prov_c.soft,
+                  color: prov_c.solid,
+                }
+              : undefined
+          }
           title={
-            data.providerId
-              ? `${data.providerId} · ${modelLabel}`
+            providerName
+              ? `${providerName} · ${modelLabel}`
               : modelLabel
           }
         >
           <span className="truncate">
-            {data.providerId ? `${data.providerId} · ` : ""}
+            {providerName ? `${providerName} · ` : ""}
             {modelLabel}
           </span>
-        </Badge>
+        </span>
       </div>
     </div>
   );
