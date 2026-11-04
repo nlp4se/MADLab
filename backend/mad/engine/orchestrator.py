@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from mad.engine.agreement import AgreementResult, resolve_agreement
-from mad.engine.format import assemble_context
+from mad.engine.format import assemble_context, ensure_user_turn, speaker_names
 from mad.engine.graph import DebateGraph
 from mad.engine.protocol import ActivationStep, schedule_by_round
 from mad.engine.transcript import AgentMessage, Transcript, TranscriptError
@@ -93,6 +93,17 @@ class RetryPolicy:
 # stopping on them would collapse every debate to a single round; they run the
 # full plan and resolve once at the end.
 _CONSENSUS_STOP_RESOLUTIONS = frozenset({"consensus"})
+
+# System instruction of a summarizer node that sets no system prompt.
+_DEFAULT_SUMMARIZER_PROMPT = "Summarize the debate so far concisely."
+
+# Closing line of the judge's context: the debate has ended, decide now.
+JUDGE_CLOSING = (
+    "The debate is over. Evaluate the arguments above and give your final decision."
+)
+
+# Stand-in for a turn whose model call failed after retries (judge context).
+FAILED_TURN_NOTE = "(no response: the model call failed)"
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +174,16 @@ def run_debate(
     )
 
     executed_rounds = 0
+    step_index = 0
     for round_index, round_steps in enumerate(plan_by_round):
+        # Rounds completed so far; the summarizer callable reads it as the
+        # current 0-based round (round prompts, error attribution).
+        transcript.rounds = round_index
         executed_rounds = round_index + 1
         for step in round_steps:
             _run_step(
                 step=step,
+                step_index=step_index,
                 config=config,
                 graph=graph,
                 nodes_by_id=nodes_by_id,
@@ -177,6 +193,7 @@ def run_debate(
                 summarizer=summarizer,
                 sleep=sleep,
             )
+            step_index += 1
 
         # Early consensus stop: resolve the round's debater outputs and break if
         # a consensus-style agreement has confidently settled.
@@ -203,6 +220,7 @@ def run_debate(
 def _run_step(
     *,
     step: ActivationStep,
+    step_index: int,
     config: MADConfig,
     graph: DebateGraph,
     nodes_by_id: dict[str, ParticipantNode],
@@ -218,7 +236,9 @@ def _run_step(
     Each agent sees the transcript-so-far (the format layer filters it to the
     agent's predecessors), so within a simultaneous step every agent reads the
     same prior history — they do not see each other's same-step turns, matching
-    the "act concurrently" semantics.
+    the "act concurrently" semantics. Each recorded turn carries
+    ``step_index`` so later contexts replay concurrent turns faithfully (an
+    agent's own turn before the same-step turns it never saw).
     """
     history = transcript.to_history()
     for node_id in step.active:
@@ -233,6 +253,7 @@ def _run_step(
         _run_agent_turn(
             node=node,
             round_index=step.round_index,
+            step_index=step_index,
             config=config,
             graph=graph,
             registry=registry,
@@ -254,6 +275,7 @@ def _run_agent_turn(
     policy: RetryPolicy,
     transcript: Transcript,
     history: list,
+    step_index: Optional[int] = None,
     summarizer: Any,
     sleep: SleepFn,
 ) -> None:
@@ -262,16 +284,16 @@ def _run_agent_turn(
     A model failure (after retries) is recorded as a :class:`TranscriptError`
     and the turn is skipped — isolation keeps the run going (Req 9.5 / 10.6).
     """
+    task = transcript.resolved_input if _receives_input(config, node.id) else ""
     assembled = assemble_context(
         history=history,
         node=node.id,
         format_spec=config.interaction.format,
         graph=graph,
-        system_prompt=_compose_system_prompt(
-            node,
-            transcript.resolved_input if _receives_input(config, node.id) else "",
-        ),
+        system_prompt=_compose_system_prompt(node, task),
         summarizer=summarizer,
+        speakers=speaker_names(config.participants.nodes),
+        has_task=bool(task),
     )
     transcript.add_notes(assembled.notes)
 
@@ -284,6 +306,7 @@ def _run_agent_turn(
             transcript=transcript,
             round_index=round_index,
             sleep=sleep,
+            has_task=bool(task),
         )
     except _CallFailed:
         # Already recorded as a TranscriptError; skip this turn.
@@ -297,6 +320,7 @@ def _run_agent_turn(
             role=_primary_role(node),
             usage=response.usage,
             structured=response.structured,
+            step=step_index,
         )
     )
 
@@ -320,13 +344,23 @@ def _invoke_with_retry(
     round_index: int,
     sleep: SleepFn,
     response_schema: Optional[dict] = None,
+    has_task: bool = False,
 ) -> ModelResponse:
     """Invoke ``node``'s model with retry/backoff; record + signal on failure.
+
+    Every model call (debater turns, judge, summarizer) goes through here, so
+    this is the one place that guarantees a non-system message
+    (:func:`~mad.engine.format.ensure_user_turn`): a list with no user turn
+    gets a round prompt appended (``has_task`` picks the "Respond to the task
+    above." wording). Providers such as Anthropic reject system-only lists.
 
     Returns the :class:`~mad.providers.base.ModelResponse` on success. On final
     failure, records a :class:`TranscriptError` and raises :class:`_CallFailed`
     so the caller can isolate the turn.
     """
+    messages = ensure_user_turn(
+        messages, round_index=round_index, has_task=has_task
+    )
     client, model_key = registry.resolve(node.base_model)
     params = dict(node.base_model.params)
     params.setdefault("temperature", node.base_model.temperature)
@@ -381,7 +415,7 @@ def _resolve_final_agreement(
     return resolve_agreement(
         config.agreement,
         outputs,
-        context=_judge_context(transcript),
+        context=_judge_context(transcript, config),
         judge_fn=judge_fn,
     )
 
@@ -482,8 +516,10 @@ def _make_judge_fn(
 
     def judge_fn(context: Any):
         messages: list[Message] = []
-        if judge_node.system_prompt:
-            messages.append(Message(role="system", content=judge_node.system_prompt))
+        # The judge's own prompt + persona; the task travels in the context.
+        system_prompt = _compose_system_prompt(judge_node, "")
+        if system_prompt:
+            messages.append(Message(role="system", content=system_prompt))
         messages.append(Message(role="user", content=str(context)))
         try:
             response = _invoke_with_retry(
@@ -535,19 +571,19 @@ def _make_summarizer(
     if summarizer_node is None:
         return None
 
+    # The node's prompt + persona; the default instruction leads when the
+    # node has no explicit system prompt.
+    system_prompt = _compose_system_prompt(summarizer_node, "")
+    if not summarizer_node.system_prompt:
+        system_prompt = "\n\n".join(
+            part for part in (_DEFAULT_SUMMARIZER_PROMPT, system_prompt) if part
+        )
+
     def summarize(messages: list[Message]) -> str:
-        call_messages: list[Message] = []
-        if summarizer_node.system_prompt:
-            call_messages.append(
-                Message(role="system", content=summarizer_node.system_prompt)
-            )
-        else:
-            call_messages.append(
-                Message(
-                    role="system",
-                    content="Summarize the debate so far concisely.",
-                )
-            )
+        # ``messages`` are the attributed history turns ("[Round r] Speaker:").
+        call_messages: list[Message] = [
+            Message(role="system", content=system_prompt)
+        ]
         call_messages.extend(messages)
         try:
             response = _invoke_with_retry(
@@ -684,12 +720,57 @@ def _deciding_judge(config: MADConfig) -> Optional[ParticipantNode]:
     return None
 
 
-def _judge_context(transcript: Transcript) -> str:
-    """Render the full transcript into the text context a judge receives."""
-    lines = [f"Task: {transcript.resolved_input}"] if transcript.resolved_input else []
-    for message in transcript.messages:
-        lines.append(f"[round {message.round_index}] {message.node_id}: {message.content}")
-    return "\n".join(lines)
+def _judge_context(
+    transcript: Transcript, config: Optional[MADConfig] = None
+) -> str:
+    """Render the whole discussion into the text context a judge receives.
+
+    Layout::
+
+        Task: <resolved input>
+
+        Debate transcript:
+        [Round 1] Functional Debater: ...
+        [Round 1] Non-functional Debater: (no response: the model call failed)
+        ...
+
+        The debate is over. Evaluate the arguments above and give your final decision.
+
+    Every recorded turn (all rounds, all speakers, in order) is attributed by
+    speaker name (:func:`~mad.engine.format.speaker_names`, ids without a
+    ``config``) and 1-based round. A turn whose call failed after retries is
+    listed with :data:`FAILED_TURN_NOTE` at the end of its round, so the judge
+    knows a participant was silent rather than absent. The task line is always
+    present (independent of ``entry_nodes``) when the input is non-empty.
+    """
+    speakers = speaker_names(config.participants.nodes) if config else {}
+
+    def name(node_id: str) -> str:
+        return speakers.get(node_id) or node_id
+
+    errors_by_round: dict[int, list[TranscriptError]] = {}
+    for error in transcript.errors:
+        errors_by_round.setdefault(error.round_index, []).append(error)
+    rounds = sorted(
+        {m.round_index for m in transcript.messages} | set(errors_by_round)
+    )
+
+    turns: list[str] = []
+    for round_index in rounds:
+        label = f"[Round {round_index + 1}]"
+        for message in transcript.messages_in_round(round_index):
+            turns.append(f"{label} {name(message.node_id)}: {message.content}")
+        for error in errors_by_round.get(round_index, []):
+            turns.append(f"{label} {name(error.node_id)}: {FAILED_TURN_NOTE}")
+
+    blocks: list[str] = []
+    if transcript.resolved_input:
+        blocks.append(f"Task: {transcript.resolved_input}")
+    if turns:
+        blocks.append("Debate transcript:\n" + "\n".join(turns))
+    if blocks:
+        blocks.append(JUDGE_CLOSING)
+    return "\n\n".join(blocks)
 
 
 __all__ = [

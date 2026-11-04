@@ -32,12 +32,24 @@ Design choices
   stays focused on MEMORY + CONTENT. It never reaches into a node's persona.
 
 * **Short-term memory = this debate's visible history, topology-filtered.** The
-  agent sees only messages authored by its **direct predecessors** in the graph
-  (incoming edges). An agent never sees its own prior messages echoed back as
-  "incoming" context (they are its own turns, not received arguments). This is
-  deliberately kept to *direct* predecessors for this layer; any transitive
+  agent sees the messages authored by its **direct predecessors** in the graph
+  (incoming edges) plus **its own prior turns**, in chronological order. This
+  is deliberately kept to *direct* predecessors for this layer; any transitive
   propagation happens because a predecessor incorporated upstream content into
   its own message, which then flows forward naturally round by round.
+
+* **Conversation shape.** The agent's own prior turns are replayed verbatim as
+  ``assistant`` messages (so in a multi-round debate it keeps track of what it
+  argued); every other visible turn is a ``user`` message attributed to its
+  speaker and round, e.g. ``"[Round 1] Non-functional Debater: ..."`` (the
+  speaker is the node label, disambiguated with the id when labels collide;
+  see :func:`speaker_names`). Metadata-signal tags follow the attribution. An
+  own turn that no user message precedes (the agent spoke without visible
+  history, e.g. round 1, or twice in a row) is preceded by the round prompt it
+  actually received (:func:`turn_prompt`), so the list never opens on, nor
+  stacks, ``assistant`` turns. Only the others' turns go through the content
+  transform: with ``summarized`` they are compressed into one ``user`` summary
+  placed after the agent's own turns.
 
 * **History representation (decoupled from task 3.5).** The transcript model
   arrives *after* this task, so a minimal, self-contained
@@ -52,19 +64,19 @@ Design choices
   :class:`AssembledContext.notes`). Rationale: a misconfigured "summarized"
   debate should still *run* (producing a slightly larger prompt) rather than
   hard-fail; the recorded note surfaces the misconfiguration to the orchestrator
-  / UI. When a summarizer *is* provided, the whole visible-history block is
-  replaced by its single summary message.
+  / UI. When a summarizer *is* provided, the others' visible turns are replaced
+  by its single summary message (the agent's own turns stay verbatim).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
 from mad.engine.graph import DebateGraph
 from mad.errors import UnderDevelopment
 from mad.providers.base import Message
-from mad.taxonomy.schema import Format
+from mad.taxonomy.schema import Format, ParticipantNode
 
 # A summarizer maps the visible history messages to a single summary string. The
 # orchestrator wires this to a summarizer-role agent; the format layer only
@@ -87,12 +99,17 @@ class HistoryRecord:
         metadata: Optional attached signals keyed by metadata-signal name
             (e.g. ``{"confidence": 0.8}``). Rendered into context only when the
             format's ``content.metadata_signals`` requests them.
+        step: Optional activation-step index. Records sharing a step were
+            produced concurrently (a simultaneous step), so none of their
+            authors saw the others' turns before speaking. ``None`` when
+            unknown (treated as strictly chronological).
     """
 
     node_id: str
     round_index: int
     content: str
     metadata: dict[str, object] = field(default_factory=dict)
+    step: Optional[int] = None
 
 
 @dataclass
@@ -203,30 +220,107 @@ def _visible_history(
     """Filter ``history`` to the records ``node`` can see (short-term memory).
 
     Visibility is governed by the topology: an agent sees messages authored by
-    its **direct predecessors** (incoming edges). Records are returned in their
-    original chronological order (``history`` is assumed ordered by the
-    orchestrator). The agent's own turns are excluded — they are its output, not
-    received context.
+    its **direct predecessors** (incoming edges) and its **own** prior turns.
+    Records are returned in their original chronological order (``history`` is
+    assumed ordered by the orchestrator), except that within a group of
+    concurrent records (same non-``None`` ``step``) the agent's own turn comes
+    first: it spoke without having seen the others' same-step turns.
     """
     predecessors = set(graph.predecessors(node))
-    return [rec for rec in history if rec.node_id in predecessors]
-
-
-def _history_messages(
-    records: list[HistoryRecord],
-    signals: list[str],
-) -> list[Message]:
-    """Render visible records into ``user`` messages (verbatim passthrough).
-
-    Each visible predecessor turn becomes a ``user`` message carrying the
-    (optionally metadata-decorated) content. Prior arguments are presented as
-    ``user`` input to the target agent; its own replies are ``assistant`` turns
-    the orchestrator records separately.
-    """
-    return [
-        Message(role="user", content=render_message(rec, signals))
-        for rec in records
+    visible = [
+        rec for rec in history if rec.node_id == node or rec.node_id in predecessors
     ]
+    ordered: list[HistoryRecord] = []
+    i = 0
+    while i < len(visible):
+        step = visible[i].step
+        j = i + 1
+        if step is not None:
+            while j < len(visible) and visible[j].step == step:
+                j += 1
+        group = visible[i:j]
+        ordered.extend(r for r in group if r.node_id == node)
+        ordered.extend(r for r in group if r.node_id != node)
+        i = j
+    return ordered
+
+
+def speaker_names(nodes: Iterable[ParticipantNode]) -> dict[str, str]:
+    """Map node ids to the speaker names used to attribute history turns.
+
+    The name is the node's label; a label shared by several nodes (compared
+    case-insensitively) becomes ``"<label> (<id>)"`` so speakers stay
+    distinguishable, and a blank label falls back to the id.
+    """
+    nodes = list(nodes)
+    counts: dict[str, int] = {}
+    for n in nodes:
+        key = (n.label or "").strip().casefold()
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    names: dict[str, str] = {}
+    for n in nodes:
+        label = (n.label or "").strip()
+        if not label:
+            names[n.id] = n.id
+        elif counts[label.casefold()] > 1 and label != n.id:
+            names[n.id] = f"{label} ({n.id})"
+        else:
+            names[n.id] = label
+    return names
+
+
+def attribute(
+    record: HistoryRecord,
+    signals: list[str],
+    speakers: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Render ``record`` attributed to its speaker and 1-based round.
+
+    ``"[Round 1] Functional Debater: [confidence: 0.8] content"``: the
+    speaker comes from ``speakers`` (see :func:`speaker_names`), defaulting to
+    the node id; metadata-signal tags (:func:`render_message`) follow it.
+    """
+    speaker = (speakers or {}).get(record.node_id) or record.node_id
+    return (
+        f"[Round {record.round_index + 1}] {speaker}: "
+        f"{render_message(record, signals)}"
+    )
+
+
+def _thread_messages(
+    records: list[HistoryRecord],
+    node: str,
+    signals: list[str],
+    speakers: Optional[Mapping[str, str]],
+    has_task: bool,
+) -> list[Message]:
+    """Render visible records as the agent's chronological conversation.
+
+    ``node``'s own turns become ``assistant`` messages (raw content, blank ones
+    skipped); every other turn becomes an attributed ``user`` message. An own
+    turn not preceded by a ``user`` message gets the round prompt the agent
+    received for it (:func:`turn_prompt`), so the list never starts with, or
+    stacks, ``assistant`` turns.
+    """
+    messages: list[Message] = []
+    for rec in records:
+        if rec.node_id == node:
+            if not rec.content.strip():
+                continue
+            if not messages or messages[-1].role != "user":
+                messages.append(
+                    Message(
+                        role="user",
+                        content=turn_prompt(rec.round_index, has_task=has_task),
+                    )
+                )
+            messages.append(Message(role="assistant", content=rec.content))
+        else:
+            messages.append(
+                Message(role="user", content=attribute(rec, signals, speakers))
+            )
+    return messages
 
 
 def assemble_context(
@@ -237,11 +331,14 @@ def assemble_context(
     *,
     system_prompt: str = "",
     summarizer: Optional[Summarizer] = None,
+    speakers: Optional[Mapping[str, str]] = None,
+    has_task: bool = False,
 ) -> AssembledContext:
     """Assemble the message list to send to ``node``'s model.
 
-    Applies memory assembly ``M(t)`` (short-term, topology-filtered), the content
-    transform ``m̃ = f(m)`` per ``format_spec.content.strategy``, and metadata
+    Applies memory assembly ``M(t)`` (short-term, topology-filtered, own turns
+    included), the content transform ``m̃ = f(m)`` per
+    ``format_spec.content.strategy``, speaker/round attribution, and metadata
     signal rendering. Syntax and non-short-term memory are gated as under
     development.
 
@@ -255,11 +352,18 @@ def assemble_context(
             composition is the orchestrator's job). Prepended as a ``system``
             message when non-empty.
         summarizer: Optional callable wiring a summarizer agent; used only when
-            ``content.strategy == "summarized"``.
+            ``content.strategy == "summarized"``. It receives the others'
+            visible turns as attributed ``user`` messages.
+        speakers: Node id -> speaker name used to attribute others' turns
+            (see :func:`speaker_names`); ids are used when absent.
+        has_task: Whether ``node``'s system prompt carries the task line;
+            selects the wording of round prompts inserted before own turns.
 
     Returns:
         An :class:`AssembledContext` with the ordered messages and any
-        diagnostic notes (e.g. the summarized→verbatim fallback).
+        diagnostic notes (e.g. the summarized→verbatim fallback). The list may
+        hold no user turn (e.g. round 1 with no visible history); the
+        orchestrator applies :func:`ensure_user_turn` to every model call.
 
     Raises:
         mad.errors.UnderDevelopment: for ``embeddings`` syntax, non-short-term
@@ -278,9 +382,11 @@ def assemble_context(
     # m̃ = f(m): apply the content transform.
     strategy = format_spec.content.strategy
     if strategy == "verbatim":
-        history_messages = _history_messages(visible, signals)
+        history_messages = _thread_messages(visible, node, signals, speakers, has_task)
     elif strategy == "summarized":
-        history_messages, note = _apply_summarized(visible, signals, summarizer)
+        history_messages, note = _apply_summarized(
+            visible, node, signals, summarizer, speakers, has_task
+        )
         if note is not None:
             notes.append(note)
     elif strategy == "other":
@@ -302,32 +408,105 @@ def assemble_context(
     return AssembledContext(messages=messages, notes=notes)
 
 
+# ---------------------------------------------------------------------------
+# User-turn guarantee (every model call carries a non-system message)
+# ---------------------------------------------------------------------------
+
+#: Turn prompt for an agent that received the task (its system prompt carries
+#: the "Task: <input>" line) but has no visible history yet. ``{round}`` is the
+#: 1-based round number.
+TURN_PROMPT_WITH_TASK = "Round {round}. Respond to the task above."
+
+#: Neutral turn prompt for an agent with no task line and no visible history
+#: (e.g. a non-entry node whose predecessors have not spoken yet).
+TURN_PROMPT_NO_TASK = "Round {round}. Give your contribution for this round."
+
+
+def turn_prompt(round_index: int, *, has_task: bool) -> str:
+    """Return the fallback user turn for 0-based ``round_index``.
+
+    ``has_task`` selects :data:`TURN_PROMPT_WITH_TASK` (the agent's system
+    prompt carries the task) over the neutral :data:`TURN_PROMPT_NO_TASK`.
+    """
+    template = TURN_PROMPT_WITH_TASK if has_task else TURN_PROMPT_NO_TASK
+    return template.format(round=round_index + 1)
+
+
+def has_user_turn(messages: list[Message]) -> bool:
+    """``True`` if ``messages`` holds a non-system message with non-blank text."""
+    return any(m.role != "system" and m.content.strip() for m in messages)
+
+
+def ensure_user_turn(
+    messages: list[Message],
+    *,
+    round_index: int,
+    has_task: bool,
+) -> list[Message]:
+    """Guarantee ``messages`` carries at least one non-system message.
+
+    Some providers (Anthropic) reject a request made only of system messages,
+    which is what a first-round turn with no visible history assembles. When
+    ``messages`` already has a non-blank user/assistant turn it is returned
+    unchanged (same list). Otherwise a new list is returned: the system
+    messages kept as-is (so the "Task:" line stays in the system prompt),
+    blank non-system messages dropped, and :func:`turn_prompt` appended as a
+    ``user`` message. Provider-agnostic: it does not rely on LiteLLM's
+    ``modify_params``.
+
+    A list that ends on the agent's own ``assistant`` turn (it spoke last and
+    nobody it listens to has spoken since) also gets the round prompt
+    appended; otherwise the provider would treat that turn as a prefill to
+    continue rather than ask for a new contribution.
+    """
+    if has_user_turn(messages):
+        if messages[-1].role != "assistant":
+            return messages
+        return [
+            *messages,
+            Message(role="user", content=turn_prompt(round_index, has_task=has_task)),
+        ]
+    kept = [m for m in messages if m.role == "system"]
+    kept.append(
+        Message(role="user", content=turn_prompt(round_index, has_task=has_task))
+    )
+    return kept
+
+
 def _apply_summarized(
     visible: list[HistoryRecord],
+    node: str,
     signals: list[str],
     summarizer: Optional[Summarizer],
+    speakers: Optional[Mapping[str, str]],
+    has_task: bool,
 ) -> tuple[list[Message], Optional[str]]:
     """Apply the summarized transform, falling back to verbatim when needed.
 
-    Returns ``(messages, note)``. ``note`` is ``None`` on the normal path and a
+    The others' visible turns go to ``summarizer`` as attributed ``user``
+    messages and come back as one ``user`` summary, placed after the agent's
+    own turns (kept verbatim as ``assistant`` messages). Returns
+    ``(messages, note)``: ``note`` is ``None`` on the normal path and a
     human-readable string when the fallback (no summarizer injected) triggers.
     """
-    verbatim_messages = _history_messages(visible, signals)
-
     if summarizer is None:
         # Non-fatal fallback: run verbatim and record why.
         note = (
             "content.strategy is 'summarized' but no summarizer was provided; "
             "falling back to verbatim history for this assembly."
         )
-        return verbatim_messages, note
+        return _thread_messages(visible, node, signals, speakers, has_task), note
 
-    if not visible:
-        # Nothing to summarize; no history block at all.
-        return [], None
+    own = [rec for rec in visible if rec.node_id == node]
+    others = [rec for rec in visible if rec.node_id != node]
+    messages = _thread_messages(own, node, signals, speakers, has_task)
+    if not others:
+        # Nothing to summarize; only the agent's own turns (if any).
+        return messages, None
 
-    summary = summarizer(verbatim_messages)
-    return [Message(role="user", content=summary)], None
+    summary = summarizer(_thread_messages(others, node, signals, speakers, has_task))
+    messages.append(Message(role="user", content=summary))
+    return messages, None
 
 
 __all__ = [
@@ -336,4 +515,11 @@ __all__ = [
     "Summarizer",
     "assemble_context",
     "render_message",
+    "attribute",
+    "speaker_names",
+    "TURN_PROMPT_WITH_TASK",
+    "TURN_PROMPT_NO_TASK",
+    "turn_prompt",
+    "has_user_turn",
+    "ensure_user_turn",
 ]

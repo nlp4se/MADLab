@@ -65,6 +65,9 @@ class AgentMessage:
         structured: Parsed structured output when the call requested a
             ``response_schema`` (e.g. a judge's ``{"class": "F"}``); ``None``
             otherwise.
+        step: Index of the activation step that produced the turn (turns
+            sharing a step were concurrent); ``None`` for turns outside the
+            round plan (judge decision). Not persisted.
     """
 
     node_id: str
@@ -74,6 +77,7 @@ class AgentMessage:
     usage: Usage = field(default_factory=Usage)
     metadata: dict[str, Any] = field(default_factory=dict)
     structured: Optional[dict[str, Any]] = None
+    step: Optional[int] = None
 
     def to_history_record(self) -> HistoryRecord:
         """Project this message to the format layer's :class:`HistoryRecord`."""
@@ -82,6 +86,7 @@ class AgentMessage:
             round_index=self.round_index,
             content=self.content,
             metadata=dict(self.metadata),
+            step=self.step,
         )
 
 

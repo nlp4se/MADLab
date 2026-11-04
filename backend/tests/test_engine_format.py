@@ -71,7 +71,8 @@ def test_short_term_assembles_predecessor_history_with_system_prompt_in_order():
         HistoryRecord(node_id="a", round_index=1, content="second from a"),
     ]
 
-    # b's predecessor is a -> b sees only a's turns, in order.
+    # b's predecessor is a -> b sees a's turns (attributed) and its own turn
+    # (assistant), in chronological order. (11.14: attribution + own turns.)
     result = assemble_context(
         history, node="b", format_spec=_fmt(), graph=graph,
         system_prompt="You are agent B.",
@@ -80,8 +81,9 @@ def test_short_term_assembles_predecessor_history_with_system_prompt_in_order():
     assert isinstance(result, AssembledContext)
     assert result.messages[0] == Message(role="system", content="You are agent B.")
     assert result.messages[1:] == [
-        Message(role="user", content="first from a"),
-        Message(role="user", content="second from a"),
+        Message(role="user", content="[Round 1] a: first from a"),
+        Message(role="assistant", content="first from b"),
+        Message(role="user", content="[Round 2] a: second from a"),
     ]
     assert result.notes == []
 
@@ -94,21 +96,23 @@ def test_topology_filtering_chain_c_sees_only_b_not_a():
     result = assemble_context(history, node="c", format_spec=_fmt(), graph=graph)
 
     contents = [m.content for m in result.messages]
-    assert "B speaks" in contents
-    assert "A speaks" not in contents
+    assert any("B speaks" in c for c in contents)
+    assert not any("A speaks" in c for c in contents)
     assert all(m.role == "user" for m in result.messages)
 
 
-def test_agent_does_not_see_its_own_turns():
+def test_agent_sees_its_own_turns_as_assistant_messages():
     graph = _chain_graph()
     history = [
         HistoryRecord(node_id="a", round_index=0, content="A speaks"),
         HistoryRecord(node_id="b", round_index=0, content="B speaks"),
     ]
-    # b's predecessor is a, so b never sees its own "B speaks".
+    # b hears a (attributed user turn) and replays its own turn as assistant.
     result = assemble_context(history, node="b", format_spec=_fmt(), graph=graph)
-    contents = [m.content for m in result.messages]
-    assert contents == ["A speaks"]
+    assert result.messages == [
+        Message(role="user", content="[Round 1] a: A speaks"),
+        Message(role="assistant", content="B speaks"),
+    ]
 
 
 def test_no_system_prompt_omits_system_message():
@@ -128,7 +132,8 @@ def test_verbatim_passes_content_through_unchanged():
     result = assemble_context(
         history, node="b", format_spec=_fmt(strategy="verbatim"), graph=graph
     )
-    assert [m.content for m in result.messages] == ["unchanged text"]
+    # Content unchanged; only the speaker/round attribution is prefixed.
+    assert [m.content for m in result.messages] == ["[Round 1] a: unchanged text"]
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +162,10 @@ def test_summarized_with_injected_summarizer_replaces_history():
     # The whole visible-history block is replaced by a single summary message.
     assert [m.content for m in result.messages] == ["SUMMARY"]
     assert result.notes == []
-    # The summarizer received the verbatim visible messages (both a's turns).
+    # The summarizer received the attributed verbatim messages (both a's turns).
     assert [m.content for m in captured["messages"]] == [
-        "long argument one",
-        "long argument two",
+        "[Round 1] a: long argument one",
+        "[Round 2] a: long argument two",
     ]
 
 
@@ -176,7 +181,10 @@ def test_summarized_without_summarizer_falls_back_to_verbatim_with_note():
     )
 
     # Falls back to verbatim (no crash) and records a note.
-    assert [m.content for m in result.messages] == ["arg one", "arg two"]
+    assert [m.content for m in result.messages] == [
+        "[Round 1] a: arg one",
+        "[Round 2] a: arg two",
+    ]
     assert len(result.notes) == 1
     assert "summariz" in result.notes[0].lower()
     assert "verbatim" in result.notes[0].lower()
@@ -262,7 +270,8 @@ def test_metadata_signal_rendered_into_context_when_configured():
         format_spec=_fmt(metadata_signals=["confidence"]),
         graph=graph,
     )
-    assert result.messages[0].content == "[confidence: 0.8] Yes it is"
+    # Signal tags follow the speaker/round attribution.
+    assert result.messages[0].content == "[Round 1] a: [confidence: 0.8] Yes it is"
 
 
 def test_metadata_signal_omitted_when_not_configured():
@@ -277,7 +286,7 @@ def test_metadata_signal_omitted_when_not_configured():
     ]
     # No metadata_signals configured -> plain content.
     result = assemble_context(history, node="b", format_spec=_fmt(), graph=graph)
-    assert result.messages[0].content == "Yes it is"
+    assert result.messages[0].content == "[Round 1] a: Yes it is"
 
 
 def test_render_message_multiple_signals_in_order():
