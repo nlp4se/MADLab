@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import API_PREFIX, create_app
 from app.routers import assistant as assistant_router
-from mad.providers.base import MockModelClient
+from mad.providers.base import MockModelClient, ModelResponse
 from mad.providers.registry import ProviderConfig, ProviderRegistry
 
 FRONTEND_ORIGIN = "http://localhost:5173"
@@ -290,6 +290,66 @@ def test_provider_runtime_error_is_a_question(tmp_path):
     assert body["artifact"] is None
     assert "failed" in body["message"].lower()
     assert "Anthropic key" in body["message"]
+
+
+# --------------------------------------------------------------------------- #
+# Token budget: reasoning models / truncation
+# --------------------------------------------------------------------------- #
+
+
+def test_reasoning_exhausted_budget_explains_truncation(tmp_path):
+    # A reasoning model that spends the whole budget thinking returns empty
+    # content with finish_reason="length"; this used to surface as the generic
+    # "Could you tell me more..." question on every turn.
+    reply = ModelResponse(text="", raw={"choices": [{"finish_reason": "length"}]})
+    client = _build_client(tmp_path, responder=_responder_returning(reply))
+
+    body = _post(client).json()
+    assert body["mode"] == "question"
+    assert body["artifact"] is None
+    assert "ran out of output tokens" in body["message"]
+    assert "reasoning" in body["message"]
+
+
+def test_truncated_json_explains_truncation(tmp_path):
+    cut = json.dumps({"mode": "proposal", "message": "x", "artifact": _valid_artifact()})[:120]
+    reply = ModelResponse(text=cut, raw={"choices": [{"finish_reason": "length"}]})
+    client = _build_client(tmp_path, responder=_responder_returning(reply))
+
+    body = _post(client).json()
+    assert body["mode"] == "question"
+    assert "ran out of output tokens" in body["message"]
+
+
+def test_empty_reply_is_reported(tmp_path):
+    client = _build_client(tmp_path, responder=_responder_returning(""))
+
+    body = _post(client).json()
+    assert body["mode"] == "question"
+    assert "empty reply" in body["message"]
+
+
+def test_request_uses_large_token_budget(tmp_path):
+    seen: dict = {}
+
+    def _responder(_messages, _model, params, _schema):
+        seen.update(params or {})
+        return json.dumps({"mode": "question", "message": "ok", "artifact": None})
+
+    client = _build_client(tmp_path, responder=_responder)
+    _post(client)
+    assert seen["max_tokens"] >= 16000
+
+
+def test_token_budget_clamped_to_model_output_limit():
+    from app.services.assistant import _MAX_TOKENS, _max_tokens_for
+
+    class _Client:
+        kind = "openai"
+
+    # gpt-4o-mini caps output at 16384 in LiteLLM's catalog; gpt-4 at 4096.
+    assert _max_tokens_for(_Client(), "gpt-4") == 4096
+    assert _max_tokens_for(_Client(), "not-a-real-model") == _MAX_TOKENS
 
 
 # --------------------------------------------------------------------------- #

@@ -54,10 +54,32 @@ from mad.providers.registry import ProviderRegistry
 from mad.taxonomy.schema import MADConfig
 from mad.taxonomy.version import import_config
 
-# Bounded generation: enough for a full artifact + explanation, low temperature
-# so the structured envelope stays stable across calls.
-_MAX_TOKENS = 2000
+# Bounded generation, low temperature so the structured envelope stays stable
+# across calls. The budget must cover a full artifact (several thousand tokens)
+# PLUS any hidden reasoning tokens: reasoning models (OpenAI gpt-5 / o-series,
+# Gemini thinking models) count reasoning against ``max_tokens``, and a 2000
+# cap was exhausted by reasoning alone, leaving an empty visible reply. The
+# budget is clamped to the model's known output limit (see
+# :func:`_max_tokens_for`) so older models with small output caps still work.
+_MAX_TOKENS = 16000
 _TEMPERATURE = 0.1
+
+# Provider ``kind`` -> LiteLLM model prefix, used only to look up a model's
+# output-token limit in LiteLLM's model catalog.
+_LITELLM_PREFIX_BY_KIND = {
+    "anthropic": "anthropic",
+    "gemini": "gemini",
+    "mistral": "mistral",
+    "deepseek": "deepseek",
+}
+
+# Kinds whose models are looked up in the catalog. Local / OpenAI-compatible
+# endpoints (ollama, vllm, openai_compatible) serve arbitrary models, so they
+# keep the default budget.
+_CATALOG_KINDS = frozenset({"openai", *_LITELLM_PREFIX_BY_KIND})
+
+# Finish reasons meaning the reply was cut off by the token budget.
+_TRUNCATED_FINISH_REASONS = frozenset({"length", "max_tokens"})
 
 
 class ProviderNotFoundError(MADError):
@@ -106,7 +128,10 @@ def design(
         response = client.complete(
             messages=messages,
             model=body.model,
-            params={"temperature": _TEMPERATURE, "max_tokens": _MAX_TOKENS},
+            params={
+                "temperature": _TEMPERATURE,
+                "max_tokens": _max_tokens_for(client, body.model),
+            },
         )
     except Exception as exc:  # noqa: BLE001 - provider failures become questions.
         return AssistantDesignResponse(
@@ -118,7 +143,74 @@ def design(
             artifact=None,
         )
 
-    return _envelope_from_text(response.text or "")
+    text = response.text or ""
+    if _was_truncated(response.raw):
+        # The reply hit the token budget: either nothing visible was produced
+        # (all reasoning) or the JSON envelope was cut off mid-artifact. Say so
+        # instead of returning a generic question or a broken JSON dump.
+        envelope = _extract_json_object(text)
+        if envelope is None:
+            return AssistantDesignResponse(
+                mode="question",
+                message=(
+                    "The model ran out of output tokens before finishing its reply"
+                    + (" (it spent the budget on reasoning)" if not text.strip() else "")
+                    + ". Try again, simplify the request, or pick a different model."
+                ),
+                artifact=None,
+            )
+    elif not text.strip():
+        return AssistantDesignResponse(
+            mode="question",
+            message=(
+                "The model returned an empty reply. Try again or pick a "
+                "different model."
+            ),
+            artifact=None,
+        )
+
+    return _envelope_from_text(text)
+
+
+def _max_tokens_for(client: Any, model: str) -> int:
+    """The output-token budget for ``model``: :data:`_MAX_TOKENS`, clamped.
+
+    Clamped to the model's ``max_output_tokens`` from LiteLLM's model catalog
+    when it is known, so models with a smaller output cap (e.g. older Claude
+    models at 4096) are not rejected for an oversized ``max_tokens``. Lookup is
+    best-effort: unknown models, local endpoints, and mock clients keep the
+    default budget.
+    """
+    kind = getattr(client, "kind", None)
+    if kind not in _CATALOG_KINDS:
+        return _MAX_TOKENS
+    try:
+        import litellm  # type: ignore import-not-found
+    except Exception:  # noqa: BLE001 - litellm is optional for the lookup.
+        return _MAX_TOKENS
+
+    candidates = [model]
+    prefix = _LITELLM_PREFIX_BY_KIND.get(kind)
+    if prefix and not model.startswith(f"{prefix}/"):
+        candidates.append(f"{prefix}/{model}")
+    for candidate in candidates:
+        try:
+            limit = litellm.get_model_info(candidate).get("max_output_tokens")
+        except Exception:  # noqa: BLE001 - unmapped model: try the next form.
+            continue
+        if isinstance(limit, int) and limit > 0:
+            return min(_MAX_TOKENS, limit)
+    return _MAX_TOKENS
+
+
+def _was_truncated(raw: Optional[dict]) -> bool:
+    """Whether the provider reports the reply was cut off by the token budget."""
+    if not isinstance(raw, dict):
+        return False
+    choices = raw.get("choices") or []
+    if not choices or not isinstance(choices[0], dict):
+        return False
+    return choices[0].get("finish_reason") in _TRUNCATED_FINISH_REASONS
 
 
 # ---------------------------------------------------------------------------
