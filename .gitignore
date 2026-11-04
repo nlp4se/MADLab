@@ -190,3 +190,4 @@ node_modules/
 
 # Backend runtime dataset upload storage (MAD_DATASET_STORAGE_PATH default)
 backend/data/
+*.db.bak-*
