@@ -143,6 +143,25 @@ export interface AgreementArtifact {
   output_schema?: Record<string, unknown> | null;
 }
 
+/** A human label for one template placeholder (mirrors the backend `AdHocField`). */
+export interface AdHocFieldArtifact {
+  key: string;
+  label: string;
+}
+
+/**
+ * The instance input (mirrors the backend `InputSpec`, task 11.10): a template
+ * with `{{placeholder}}` tags resolved per run (single form values or mapped
+ * CSV columns). The engine appends "Task: <resolved template>" to the system
+ * prompt of the entry participants; judges see it in their context.
+ */
+export interface InputSpecArtifact {
+  template?: string;
+  placeholders?: string[];
+  ad_hoc_fields?: AdHocFieldArtifact[];
+  [key: string]: unknown;
+}
+
 export interface UiPoint {
   x: number;
   y: number;
@@ -169,7 +188,7 @@ export interface MADArtifact {
   participants: ParticipantsArtifact;
   interaction: InteractionArtifact;
   agreement?: AgreementArtifact;
-  input_spec?: Record<string, unknown>;
+  input_spec?: InputSpecArtifact;
   ui?: UiLayoutArtifact | null;
   // Any additional fields the designer doesn't model are preserved by spreads.
   [key: string]: unknown;

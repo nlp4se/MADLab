@@ -194,6 +194,58 @@ describe("RunLauncherPage", () => {
     expect(screen.getByRole("button", { name: /Launch/i })).toBeDisabled();
   });
 
+  it("explains an empty input template and links to the designer's Input panel (task 11.10)", async () => {
+    const base = makeDetail();
+    installFetch({
+      detail: makeDetail({
+        artifact: {
+          ...base.artifact,
+          input_spec: { template: "", placeholders: [], ad_hoc_fields: [] },
+        },
+      }),
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await pickConfig(user);
+
+    const gate = await screen.findByTestId("missing-input-gate");
+    expect(gate).toHaveTextContent(/has no input yet/i);
+    expect(
+      screen.getByRole("link", { name: /Define the input in the designer/i }),
+    ).toHaveAttribute("href", "/designer/1?panel=input");
+    expect(screen.getByRole("button", { name: /Launch/i })).toBeDisabled();
+  });
+
+  it("launches a fixed task (template without placeholders) with an empty input", async () => {
+    const requests: { method: string; url: string; body: unknown }[] = [];
+    const base = makeDetail();
+    installFetch({
+      detail: makeDetail({
+        artifact: {
+          ...base.artifact,
+          input_spec: { template: "Debate remote work.", placeholders: [], ad_hoc_fields: [] },
+        },
+      }),
+      onRequest: (method, url, body) => requests.push({ method, url, body }),
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await pickConfig(user);
+    expect(await screen.findByText(/same fixed task/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("missing-input-gate")).not.toBeInTheDocument();
+
+    const launch = screen.getByRole("button", { name: /Launch/i });
+    await waitFor(() => expect(launch).toBeEnabled());
+    await user.click(launch);
+    await waitFor(() =>
+      expect(screen.getByText("Execution detail")).toBeInTheDocument(),
+    );
+    const post = requests.find((r) => r.method === "POST" && r.url.endsWith("/executions"));
+    expect(post!.body).toEqual({ config_id: 1, input: {} });
+  });
+
   it("single mode collects template fields and posts { config_id, input } (Req 10.2, 10.4)", async () => {
     const requests: { method: string; url: string; body: unknown }[] = [];
     installFetch({

@@ -26,6 +26,7 @@ import {
   entryConnectorId,
   exitConnectorId,
 } from "./ioNodes";
+import { isInputTemplateEmpty } from "./inputEditor";
 import { startEndFallback, type LayoutMap } from "./layout";
 import type { ParticipantNodeData } from "./ParticipantNode";
 import { conflictNodeIds } from "./participantScope";
@@ -140,13 +141,17 @@ export {
 
 /**
  * The synthetic Start and End nodes, positioned to the left/right of the
- * participant cloud. Non-selectable and non-deletable (draggable is harmless);
- * ids are reserved sentinels that cannot collide with participant ids. Returns
- * an empty list when there are no participants.
+ * participant cloud. Both are non-deletable (no keyboard Delete, no context
+ * menu; draggable is harmless); ids are reserved sentinels that cannot collide
+ * with participant ids. Start is selectable (task 11.10): selecting it opens
+ * the Input panel (`inputSelected` mirrors the store's `{ kind: "input" }`
+ * selection) and it carries a marker when the input template is empty. End
+ * stays non-selectable. Returns an empty list when there are no participants.
  */
 export function toStartEndNodes(
   artifact: MADArtifact,
   layout: LayoutMap,
+  inputSelected = false,
 ): FlowNode<StartEndNodeData>[] {
   const nodes = artifact.participants.nodes;
   if (nodes.length === 0) return [];
@@ -161,7 +166,6 @@ export function toStartEndNodes(
   const startPos = layout[START_NODE_ID] ?? fallback.start;
   const endPos = layout[END_NODE_ID] ?? fallback.end;
   const common = {
-    selectable: false as const,
     deletable: false as const,
     draggable: true as const,
   };
@@ -170,7 +174,9 @@ export function toStartEndNodes(
       id: START_NODE_ID,
       type: "start",
       position: startPos,
-      data: { label: "Start" },
+      data: { label: "Start", inputMissing: isInputTemplateEmpty(artifact) },
+      selectable: true,
+      selected: inputSelected,
       ...common,
     },
     {
@@ -178,6 +184,7 @@ export function toStartEndNodes(
       type: "end",
       position: endPos,
       data: { label: "End" },
+      selectable: false,
       ...common,
     },
   ];

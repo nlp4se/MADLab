@@ -20,20 +20,49 @@ export interface TemplateField {
   label: string;
 }
 
+/**
+ * Mirror of the backend `PLACEHOLDER_PATTERN` (`backend/mad/input/template.py`):
+ * `{{name}}` where `name` is a run of word characters, dots, hyphens or spaces;
+ * whitespace just inside the braces is ignored (the captured name is trimmed),
+ * so `{{ requirement }}` and `{{requirement}}` are the same tag. Python's `\w`
+ * is Unicode-aware, hence `\p{L}\p{N}_` with the `u` flag.
+ */
+export const PLACEHOLDER_SOURCE = String.raw`\{\{\s*([\p{L}\p{N}_.\- ]+?)\s*\}\}`;
+
+/** A fresh global matcher for {@link PLACEHOLDER_SOURCE} (regexes are stateful). */
+export function placeholderRegex(): RegExp {
+  return new RegExp(PLACEHOLDER_SOURCE, "gu");
+}
+
 /** Extract `{{placeholder}}` tags from a template string, in order, de-duped. */
 export function placeholdersFromTemplate(template: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  const re = /\{\{\s*([\w.-]+)\s*\}\}/g;
+  const re = placeholderRegex();
   let match: RegExpExecArray | null;
   while ((match = re.exec(template)) !== null) {
-    const key = match[1];
-    if (!seen.has(key)) {
+    const key = match[1].trim();
+    if (key && !seen.has(key)) {
       seen.add(key);
       out.push(key);
     }
   }
   return out;
+}
+
+/**
+ * Resolve `{{placeholder}}` tags against `values`, like the engine's lenient
+ * `_resolve_template`: known keys are substituted, unknown tags stay verbatim.
+ */
+export function resolveTemplate(
+  template: string,
+  values: Record<string, string>,
+): string {
+  if (!template) return "";
+  return template.replace(placeholderRegex(), (tag: string, name: string) => {
+    const key = name.trim();
+    return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : tag;
+  });
 }
 
 function asRecord(value: unknown): JsonObject | null {
@@ -71,7 +100,8 @@ export function templateFields(config: ConfigDetail): TemplateField[] {
       const key = rec?.["key"];
       const label = rec?.["label"];
       if (typeof key === "string") {
-        labels.set(key, typeof label === "string" ? label : key);
+        // An empty/missing label falls back to the key (always a visible name).
+        labels.set(key, typeof label === "string" && label.trim() ? label : key);
       }
     }
   }

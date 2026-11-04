@@ -1027,6 +1027,23 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793807531776
       }
+    ],
+    "11.10 Editable config name and an Input editor in the designer": [
+      {
+        "executionId": "4ad74185-b13e-4361-aee4-0ff5a6c83e77",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793807867010
+      },
+      {
+        "executionId": "4ad74185-b13e-4361-aee4-0ff5a6c83e77",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793807870440
+      },
+      {
+        "executionId": "4ad74185-b13e-4361-aee4-0ff5a6c83e77",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793809057169
+      }
     ]
   }
 }

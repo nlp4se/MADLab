@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import ReactFlow, {
   Background,
@@ -22,6 +22,7 @@ import { AlertTriangle, Wrench } from "lucide-react";
 import { configsApi, type JsonObject } from "@/api";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
 import type { ApplicableTopology } from "./artifact";
+import { DesignerHeader } from "./DesignerHeader";
 import { DesignerToolbar } from "./DesignerToolbar";
 import { Inspector } from "./panels/Inspector";
 import { ParticipantNode } from "./ParticipantNode";
@@ -170,16 +171,34 @@ function DesignerCanvas({ configId }: { configId: number }) {
   // Derive React Flow nodes/edges from the artifact + layout. The real graph
   // (V/E) and the synthetic Start/End overlay are projected separately then
   // concatenated, so `toFlowEdges` stays a faithful 1:1 of the artifact.
+  const inputSelected = selection?.kind === "input";
   const nodes = useMemo<FlowNode[]>(
     () =>
       artifact
         ? [
             ...toFlowNodes(artifact, layout, selectedNodeId),
-            ...toStartEndNodes(artifact, layout),
+            ...toStartEndNodes(artifact, layout, inputSelected),
           ]
         : [],
-    [artifact, layout, selectedNodeId],
+    [artifact, layout, selectedNodeId, inputSelected],
   );
+
+  // `?panel=input` (the Run view's "define the input" link) opens the Input
+  // panel once this config is the one loaded in the store (loading resets the
+  // selection, so wait for the store's configId to match).
+  const [searchParams] = useSearchParams();
+  const storeConfigId = useDesignerStore((s) => s.configId);
+  const openedInputFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      searchParams.get("panel") === "input" &&
+      storeConfigId === configId &&
+      openedInputFor.current !== configId
+    ) {
+      openedInputFor.current = configId;
+      setSelection({ kind: "input" });
+    }
+  }, [searchParams, storeConfigId, configId, setSelection]);
   const edges = useMemo<FlowEdge[]>(
     () =>
       artifact
@@ -214,7 +233,15 @@ function DesignerCanvas({ configId }: { configId: number }) {
           // sentinel ids — never in the artifact).
           moveNode(change.id, change.position);
         } else if (isSynthNode) {
-          // Start/End are not removable or selectable; ignore other changes.
+          // Selecting Start opens the Input panel (task 11.10). Start/End are
+          // never removable (and End is not selectable); ignore the rest.
+          if (
+            change.type === "select" &&
+            change.selected &&
+            changeId === START_NODE_ID
+          ) {
+            setSelection({ kind: "input" });
+          }
           continue;
         } else if (change.type === "remove") {
           removeNode(change.id);
@@ -294,6 +321,15 @@ function DesignerCanvas({ configId }: { configId: number }) {
     setSelection(null);
   }, [closeCanvasMenu, setSelection]);
 
+  // Clicking Start opens the Input panel (also when it is already selected,
+  // where React Flow emits no new select change).
+  const onNodeClick = useCallback(
+    (_event: unknown, node: { id: string }) => {
+      if (node.id === START_NODE_ID) setSelection({ kind: "input" });
+    },
+    [setSelection],
+  );
+
   // Apply a topology template, warning first if an existing graph would be
   // overwritten (Req 6.5 — initializing a structure replaces the current edges).
   const labelTopology = useMemo(() => catalogTopologyLabel(getValue), [getValue]);
@@ -333,16 +369,18 @@ function DesignerCanvas({ configId }: { configId: number }) {
 
   return (
     <div className="flex h-full flex-col">
+      <DesignerHeader />
       <DesignerToolbar
         onAddNode={() => addNode()}
         onApplyTopology={handleApplyTopology}
         onAutoLayout={handleAutoLayout}
         onDeleteSelection={() => {
+          // The Start node (`input` selection) is never deletable.
           if (selection?.kind === "node") removeNode(selection.id);
           else if (selection?.kind === "edge") deleteCanvasEdge(selection.id);
         }}
         onSave={handleSave}
-        canDeleteSelection={selection !== null}
+        canDeleteSelection={selection?.kind === "node" || selection?.kind === "edge"}
         dirty={dirty}
         saving={updateConfig.isPending}
         topologyStatus={status}
@@ -410,6 +448,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
             onConnect={onConnect}
             onConnectEnd={onConnectEnd}
             onPaneClick={onPaneClick}
+            onNodeClick={onNodeClick}
             onEdgeContextMenu={onEdgeContextMenu}
             onNodeContextMenu={onNodeContextMenu}
             onMoveStart={closeCanvasMenu}

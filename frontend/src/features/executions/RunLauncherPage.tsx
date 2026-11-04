@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Loader2, Play, Upload } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { AlertTriangle, Loader2, LogIn, Play, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import type {
 } from "@/api";
 
 import { ConfigSummaryChips } from "@/features/configs/ConfigSummaryChips";
-import { templateFields, type TemplateField } from "./inputSpec";
+import { templateFields, templateString, type TemplateField } from "./inputSpec";
 import {
   useConfigDetailQuery,
   useConfigsQuery,
@@ -74,6 +74,9 @@ export function RunLauncherPage() {
     () => (config ? templateFields(config) : []),
     [config],
   );
+  // Task 11.10: an empty template still runs on the backend, but no
+  // participant receives a task — block the launch and say how to fix it.
+  const inputMissing = config !== null && templateString(config).trim() === "";
 
   function handlePickConfig(value: string) {
     const id = value === "" ? null : Number(value);
@@ -107,11 +110,14 @@ export function RunLauncherPage() {
     };
   }
 
+  // A template without placeholders is a fixed task: single runs need no
+  // fields. Batch runs need at least one mapped column.
   const canLaunch =
     configId !== null &&
     !gated &&
+    !inputMissing &&
     (mode === "single"
-      ? fields.length > 0
+      ? true
       : dataset !== null && Object.keys(mapping).length > 0) &&
     !createExecution.isPending;
 
@@ -182,6 +188,8 @@ export function RunLauncherPage() {
             {gated && config ? (
               <UnderDevelopmentGate config={config} />
             ) : null}
+
+            {inputMissing && config ? <MissingInputGate config={config} /> : null}
           </CardContent>
         </Card>
 
@@ -214,6 +222,7 @@ export function RunLauncherPage() {
 
               {mode === "single" ? (
                 <SingleInputForm
+                  inputMissing={inputMissing}
                   fields={fields}
                   values={fieldValues}
                   onChange={(key, value) =>
@@ -330,6 +339,39 @@ function UnderDevelopmentGate({ config }: { config: ConfigDetail }) {
   );
 }
 
+/**
+ * The missing-input gate (task 11.10): the config's `input_spec.template` is
+ * empty, so a run would give the participants no task. Links straight to the
+ * designer's Input panel for this config.
+ */
+function MissingInputGate({ config }: { config: ConfigDetail }) {
+  return (
+    <div
+      role="alert"
+      data-testid="missing-input-gate"
+      className="rounded-md border border-amber-500/60 bg-amber-500/10 p-3 text-sm"
+    >
+      <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+        <AlertTriangle className="size-4" aria-hidden />
+        This configuration has no input yet
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        Its input template is empty, so the participants would receive no task
+        and there are no fields to fill in. Define the input (a template such as{" "}
+        <span className="font-mono">{"{{input}}"}</span>) in the designer, save,
+        then come back to run it.
+      </p>
+      <Link
+        to={`/designer/${config.id}?panel=input`}
+        className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-2 hover:underline"
+      >
+        <LogIn className="size-4" aria-hidden />
+        Define the input in the designer
+      </Link>
+    </div>
+  );
+}
+
 function ModeToggle({
   active,
   onClick,
@@ -358,18 +400,28 @@ function ModeToggle({
 }
 
 function SingleInputForm({
+  inputMissing,
   fields,
   values,
   onChange,
 }: {
+  inputMissing: boolean;
   fields: TemplateField[];
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
 }) {
+  if (inputMissing) {
+    return (
+      <p className="text-sm italic text-muted-foreground">
+        No input fields: this configuration has no input template yet.
+      </p>
+    );
+  }
   if (fields.length === 0) {
     return (
       <p className="text-sm italic text-muted-foreground">
-        This configuration's template declares no input fields.
+        This configuration's template has no placeholders, so every run uses the
+        same fixed task.
       </p>
     );
   }

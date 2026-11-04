@@ -62,6 +62,7 @@ import {
   type PersonaFields,
 } from "./participantScope";
 import { END_NODE_ID, START_NODE_ID } from "./StartEndNodes";
+import { withPlaceholderLabel, withTemplate } from "./inputEditor";
 import { buildTopologyEdges, topologyMeta } from "./topology";
 import {
   firstCompatibleResolution,
@@ -82,10 +83,15 @@ export type EdgeBendMap = Record<string, XYPosition>;
 /** The synthetic Start/End sentinel ids that may carry a stored position. */
 const SENTINEL_IDS = [START_NODE_ID, END_NODE_ID];
 
-/** A selected canvas element (node or edge), or nothing. */
+/**
+ * A selected canvas element (participant node or edge), the synthetic Start
+ * node (`input`: it opens the Input panel, task 11.10; never deletable), or
+ * nothing.
+ */
 export type Selection =
   | { kind: "node"; id: string }
   | { kind: "edge"; id: string }
+  | { kind: "input" }
   | null;
 
 export interface DesignerState {
@@ -118,6 +124,20 @@ export interface DesignerState {
    * applied proposal is an unsaved edit, unlike a fresh load).
    */
   setArtifactFromAssistant: (raw: Record<string, unknown>) => void;
+  /**
+   * Edit the config name / description (task 11.10, designer header). The
+   * name is trimmed and an empty one is rejected (returns false, nothing
+   * changes); an unchanged value is a no-op. Saved with the existing Save
+   * (the backend syncs the configurations row from the artifact).
+   */
+  updateMeta: (patch: { name?: string; description?: string }) => boolean;
+  /**
+   * Edit the input template (task 11.10): placeholders are re-detected and the
+   * per-placeholder labels synced (see `inputEditor.ts`).
+   */
+  updateInputTemplate: (template: string) => void;
+  /** Set the run-form label of one template placeholder. */
+  updateInputLabel: (key: string, label: string) => void;
   /** Add a new participant node with sensible defaults; returns its id. */
   addNode: (partial?: Partial<ParticipantNodeArtifact>) => string;
   /** Patch a single participant node's fields (Req 1.*, inspector). */
@@ -327,6 +347,47 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       // An applied proposal is an unsaved edit — the user reviews then Saves.
       dirty: true,
       validationErrors: [],
+    });
+  },
+
+  updateMeta: (patch) => {
+    const state = get();
+    if (!state.artifact) return false;
+    const next: MADArtifact = { ...state.artifact };
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name) return false;
+      next.name = name;
+    }
+    if (patch.description !== undefined) next.description = patch.description.trim();
+    const changed =
+      next.name !== state.artifact.name ||
+      (next.description ?? "") !== (state.artifact.description ?? "");
+    if (changed) set({ artifact: next, dirty: true });
+    return true;
+  },
+
+  updateInputTemplate: (template) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        input_spec: withTemplate(state.artifact.input_spec, template),
+      },
+      dirty: true,
+    });
+  },
+
+  updateInputLabel: (key, label) => {
+    const state = get();
+    if (!state.artifact) return;
+    set({
+      artifact: {
+        ...state.artifact,
+        input_spec: withPlaceholderLabel(state.artifact.input_spec, key, label),
+      },
+      dirty: true,
     });
   },
 

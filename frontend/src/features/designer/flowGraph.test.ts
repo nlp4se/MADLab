@@ -103,16 +103,28 @@ describe("flowGraph — arrows", () => {
 });
 
 describe("flowGraph — synthetic Start/End nodes + IO connectors", () => {
-  it("produces non-selectable, non-deletable Start and End nodes", () => {
+  it("produces non-deletable Start and End nodes; only Start is selectable (task 11.10)", () => {
     const a = chainArtifact();
     const nodes = toStartEndNodes(a, layoutOf(a));
     const ids = nodes.map((n) => n.id);
     expect(ids).toEqual([START_NODE_ID, END_NODE_ID]);
     for (const n of nodes) {
-      expect(n.selectable).toBe(false);
       expect(n.deletable).toBe(false);
       expect(n.draggable).toBe(true);
     }
+    const [start, end] = nodes;
+    expect(start.selectable).toBe(true);
+    expect(start.selected).toBe(false);
+    expect(end.selectable).toBe(false);
+    // The Input selection highlights Start.
+    expect(toStartEndNodes(a, layoutOf(a), true)[0].selected).toBe(true);
+  });
+
+  it("flags Start when the input template is empty", () => {
+    const a = chainArtifact();
+    expect(toStartEndNodes(a, layoutOf(a))[0].data.inputMissing).toBe(true);
+    const withInput = { ...a, input_spec: { template: "{{input}}" } };
+    expect(toStartEndNodes(withInput, layoutOf(a))[0].data.inputMissing).toBe(false);
   });
 
   it("wires Start -> every speaker and the aggregated debaters -> End (engine default)", () => {

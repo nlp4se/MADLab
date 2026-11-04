@@ -474,6 +474,26 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: kind -> family mapping, column added to an old DB, provider API accept/reject, Providers
     view field states, designer read-only display and write-on-bind, save/snapshot normalization.
   - _Requirements: 1.7, 1.8, 8.2, 8.6, 14.3_
+
+- [x] 11.10 Editable config name and an Input editor in the designer
+  - Name/description: the designer header shows the config name as an inline-editable title (click or
+    pencil icon; Enter/blur commits, Escape cancels, empty name rejected inline) plus an optional
+    description; edits mark the store dirty and are saved with the existing Save.
+  - Input editor: the instance input (`input_spec`) becomes editable where it enters the debate.
+    Selecting the Start node (and a new Input tab in the inspector) opens an Input panel:
+    template textarea with `{{placeholder}}` tags; placeholders auto-detected and kept in
+    `input_spec.placeholders`; a label per placeholder (`ad_hoc_fields`, defaulting to the key);
+    a live preview with sample values; a note on which participants receive it (the Start
+    connectors) and how it is injected ("Task: <resolved input>" in their system prompt; judges
+    see it in their context). Placeholder syntax matches the backend `PLACEHOLDER_PATTERN`
+    (also fix the frontend run-launcher regex to match it).
+  - Readiness: an empty template shows an inline warning in the Input panel, on the Start node, and
+    in the Run launcher (with a link to the designer's Input panel) instead of a silent disabled
+    Launch. New configs start with a starter template (e.g. `{{input}}` labelled "Input").
+  - Assistant: proposals keep or set a sensible `input_spec`; the prompt documents it.
+  - Tests: name edit/validation/dirty/save, template parsing and label sync, preview, Start-node
+    selection opens the panel, empty-template warnings, run-launcher fields from the edited spec.
+  - _Requirements: 6.1, 6.3, 10.2, 12.2_
 ```
 
 ---
