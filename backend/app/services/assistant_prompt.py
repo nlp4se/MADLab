@@ -165,15 +165,44 @@ Key rules a MAD designer must respect (enforce these so the artifact validates):
   `judge_based`, `exit_nodes` must include a judge.
 - Turn order and rounds live in `interaction.protocol`: `max_rounds` controls
   how many rounds run; `order` lists node ids for `fixed` ordering.
+  - `ordering` / `order` only apply to the `sequential` mechanism. With `fixed`
+    ordering, leave `order` empty for declaration order, or list EVERY
+    speaking participant (a participant left out of `order` never speaks).
+  - A `hybrid` mechanism REQUIRES at least one phase in `protocol.phases`
+    (each `{{"mechanism": "sequential"|"simultaneous", "participants": [ids]}}`,
+    empty `participants` = every participant); without phases the run fails.
+  - `format.content.strategy` `summarized` needs a node with the `summarizer`
+    role (without one the engine falls back to verbatim history).
 - A judge node is a node whose `roles` include `judge`. If
   `agreement.authority` is `judge_based`, there MUST be at least one judge-role
   node, and the judge decides AFTER the rounds. The judge is NOT connected by an
   edge — it reads the transcript, it does not debate.
 - `agreement.resolution` of `weighted_vote` or `scoring` REQUIRES a non-empty
   `agreement.resolution_params` (e.g. weights or a scoring rubric).
+- Authority and resolution must be compatible:
+  - `argument_evaluation` needs a judge: use it with `judge_based` or
+    `hybrid` authority, NEVER with `collective` (that run fails).
+  - With `judge_based` the judge's reply IS the decision, so use
+    `argument_evaluation` (votes/scores/averages are not applied). To vote
+    first and ask the judge only on a tie / no consensus, use `hybrid`.
+  - `hybrid` also needs a judge-role node for its fallback.
 - `structured_network` topology requires a `pattern`
   (chain/ring/star/tree/layered/sparse/bipartite); `fully_connected` and
-  `grouped` leave `pattern` null.
+  `grouped` leave `pattern` null. Prefer `fully_connected` or
+  `structured_network`: the designer cannot assign participants to groups, so
+  do not propose `grouped`.
+- Participant settings must agree with the node data (the designer flags any
+  mismatch as a conflict):
+  - `persona_assignment` `unspecified` = NO personas: leave every node's
+    `persona` empty. To give personas, set it to `manual`. `automatic` is under
+    development; do not fill personas by hand for it.
+  - With `manual` + `persona_heterogeneity` `homogeneous`, every node with the
+    `debater` role has the SAME persona (judges/summarizers may differ). If the
+    debaters need distinct personas, use `heterogeneous`.
+  - `base_model_heterogeneity` `homogeneous` = EVERY node has the same
+    `provider_id` / `model_key` / `family`. Different models per node require
+    `heterogeneous`.
+  - `system_prompt` is per node and independent of these settings.
 - `base_model.provider_id` / `model_key` may be left null at design time; the
   user binds a concrete provider + model later in the designer. Only set them if
   the user explicitly names a provider/model.
