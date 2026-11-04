@@ -57,6 +57,15 @@ export interface DesignerState {
 
   /** Replace the whole artifact (e.g. on load or after a save round-trip). */
   loadArtifact: (configId: number, raw: Record<string, unknown>) => void;
+  /**
+   * Replace the artifact from an AI-assistant proposal (task 11.1).
+   *
+   * Like {@link loadArtifact} it normalizes the raw artifact and reconciles the
+   * canvas layout, but it keeps the current `configId` and — crucially — marks
+   * the store `dirty` so the user can review on the canvas and then Save (an
+   * applied proposal is an unsaved edit, unlike a fresh load).
+   */
+  setArtifactFromAssistant: (raw: Record<string, unknown>) => void;
   /** Add a new participant node with sensible defaults; returns its id. */
   addNode: (partial?: Partial<ParticipantNodeArtifact>) => string;
   /** Patch a single participant node's fields (Req 1.*, inspector). */
@@ -158,6 +167,22 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       layout: autoLayout(nodeIds),
       selection: null,
       dirty: false,
+      validationErrors: [],
+    });
+  },
+
+  setArtifactFromAssistant: (raw) => {
+    const artifact = normalizeArtifact(raw);
+    const nodeIds = artifact.participants.nodes.map((n) => n.id);
+    const state = get();
+    set({
+      artifact,
+      // Reconcile against the existing layout so nodes that carry over keep
+      // their positions; new nodes get auto-placed.
+      layout: reconcileLayout(nodeIds, state.layout),
+      selection: null,
+      // An applied proposal is an unsaved edit — the user reviews then Saves.
+      dirty: true,
       validationErrors: [],
     });
   },

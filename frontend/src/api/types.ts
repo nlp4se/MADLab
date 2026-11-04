@@ -261,6 +261,39 @@ export interface DatasetPreviewResponse {
   instance: JsonObject;
 }
 
+/* -------------------------- Design assistant (11.1) ---------------------- */
+
+export interface AssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AssistantDesignRequest {
+  /** DB id of the provider to call (chosen per request in the chat panel). */
+  provider_id: number;
+  /** Model key on that provider (chosen per request; never hardcoded). */
+  model: string;
+  /** The new user message. */
+  message: string;
+  /** Prior conversation turns, oldest first. */
+  history?: AssistantMessage[];
+  /** The MAD config currently being edited, or null for a fresh design. */
+  artifact?: JsonObject | null;
+}
+
+export interface AssistantDesignResponse {
+  /**
+   * `"question"` → the model needs clarification (`artifact` is null);
+   * `"proposal"` → `message` explains and `artifact` is a full, validated
+   * MADConfig JSON.
+   */
+  mode: "question" | "proposal";
+  message: string;
+  artifact: JsonObject | null;
+  /** Keys of any non-executable taxonomy selections in a proposed artifact. */
+  under_development: string[];
+}
+
 /* ---------------------------- Executions (11) ---------------------------- */
 
 export interface BatchInput {

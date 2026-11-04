@@ -31,6 +31,7 @@ import {
   toStartEndEdges,
   toStartEndNodes,
 } from "./flowGraph";
+import { AssistantChat } from "./AssistantChat";
 import { useDesignerStore } from "./designerStore";
 import { topologyLabel } from "./topology";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
@@ -323,6 +324,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
             <Background />
             <Controls />
           </ReactFlow>
+          <AssistantChat />
         </div>
         <Inspector />
       </div>

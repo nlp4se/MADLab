@@ -6,6 +6,8 @@
  */
 import { http } from "./client";
 import type {
+  AssistantDesignRequest,
+  AssistantDesignResponse,
   ConfigCopyRequest,
   ConfigCreateRequest,
   ConfigDetail,
@@ -68,6 +70,16 @@ export const providersApi = {
     http.del<ProviderDeleteResponse>(`/providers/${id}`),
   test: (id: number, body: ProviderTestRequest) =>
     http.post<ProviderTestResponse>(`/providers/${id}/test`, body),
+};
+
+export const assistantApi = {
+  /**
+   * POST /api/assistant/design — chat-to-configure the MAD designer. The model
+   * is always called from the backend through the LiteLLM provider layer
+   * (keys decrypted at call time); provider + model are per request (task 11.1).
+   */
+  design: (body: AssistantDesignRequest) =>
+    http.post<AssistantDesignResponse>("/assistant/design", body),
 };
 
 export const datasetsApi = {
