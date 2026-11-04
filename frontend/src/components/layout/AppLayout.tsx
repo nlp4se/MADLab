@@ -18,7 +18,7 @@ export function AppLayout() {
         <div className="flex items-center gap-2 px-5 py-4">
           <MessagesSquare className="size-6 text-primary" />
           <div className="leading-tight">
-            <div className="text-sm font-semibold">MAD Platform</div>
+            <div className="text-sm font-semibold">MADLab</div>
             <div className="text-xs text-muted-foreground">
               Multi-Agent Debate
             </div>

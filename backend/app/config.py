@@ -80,7 +80,7 @@ class Settings(BaseSettings):
         return Path(self.dataset_storage_path)
 
     # OpenAPI metadata
-    api_title: str = Field(default="MAD Platform API")
+    api_title: str = Field(default="MADLab API")
     api_description: str = Field(
         default=(
             "REST API for the Multi-Agent Debate (MAD) platform: taxonomy, "

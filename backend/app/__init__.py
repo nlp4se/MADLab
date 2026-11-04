@@ -1,4 +1,4 @@
-"""FastAPI web layer for the MAD platform.
+"""FastAPI web layer for the MADLab.
 
 Thin driver over the headless ``mad`` engine: routers, DTO schemas, services,
 SQLAlchemy persistence, credential security, and the async job runner. The

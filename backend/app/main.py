@@ -69,7 +69,7 @@ def _make_lifespan(settings: Settings):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Create and configure the MAD platform FastAPI application.
+    """Create and configure the MADLab FastAPI application.
 
     Args:
         settings: Optional settings override. When omitted, the process-wide

@@ -56,7 +56,7 @@ def client() -> TestClient:
 def test_create_app_returns_fastapi_instance():
     app = create_app(_settings())
     assert isinstance(app, FastAPI)
-    assert app.title == "MAD Platform API"
+    assert app.title == "MADLab API"
     assert app.version == mad_version
     assert app.description  # non-empty OpenAPI description
 
@@ -65,7 +65,7 @@ def test_openapi_schema_exposes_health(client: TestClient):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert schema["info"]["title"] == "MAD Platform API"
+    assert schema["info"]["title"] == "MADLab API"
     assert f"{API_PREFIX}/health" in schema["paths"]
 
 

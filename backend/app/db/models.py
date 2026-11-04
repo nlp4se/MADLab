@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for the MAD platform persistence layer.
+"""SQLAlchemy ORM models for the MADLab persistence layer.
 
 The schema follows the design's *Persistence* section exactly (Req 14.3):
 
