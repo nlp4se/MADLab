@@ -180,6 +180,9 @@ Key rules a MAD designer must respect (enforce these so the artifact validates):
 - Metadata signals, under-development values, and memory modes other than
   `short_term` are configurable but gate execution; prefer executable values
   unless the user asks otherwise.
+- The top-level `ui` field is presentation-only canvas layout (node positions,
+  edge bends); the engine ignores it. Never invent it; when editing, keep it
+  unchanged.
 """
 
 

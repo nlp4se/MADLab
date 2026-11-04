@@ -466,3 +466,41 @@ def test_retry_policy_delay_schedule():
 def _system_text(messages: list[Message]) -> str:
     """Concatenate the system messages' content for responder branching."""
     return " ".join(m.content for m in messages if m.role == "system")
+
+
+# ---------------------------------------------------------------------------
+# Presentation-only ``ui`` layout (task 11.4): the engine ignores it.
+# ---------------------------------------------------------------------------
+
+
+def test_ui_layout_does_not_affect_the_run():
+    """A config carrying ``ui`` runs identically to the same config without it."""
+    from mad.taxonomy.schema import UiLayout
+
+    def responder(messages, model, params, response_schema):
+        if response_schema is not None:
+            return '{"class": "NF"}'
+        return f"turn for {_system_text(messages)[:20]}"
+
+    def run(config: MADConfig) -> Transcript:
+        return run_debate(
+            config, {"requirement": "Login must be fast"},
+            _registry(MockModelClient(responder=responder)), sleep=_no_sleep,
+        )
+
+    plain = _bind(templates.re_binary_debate())
+    with_ui = _bind(templates.re_binary_debate())
+    with_ui.id = plain.id
+    with_ui.ui = UiLayout.model_validate({
+        "nodes": {n.id: {"x": 10.0 * i, "y": 5.0} for i, n in
+                  enumerate(with_ui.participants.nodes)} | {"__start__": {"x": -200, "y": 0}},
+        "edges": {"__start__->x": {"x": 12.5, "y": -30}},
+    })
+
+    a, b = run(plain), run(with_ui)
+    assert a.rounds == b.rounds
+    assert [(m.node_id, m.round_index, m.role, m.content) for m in a.messages] == [
+        (m.node_id, m.round_index, m.role, m.content) for m in b.messages
+    ]
+    assert a.decision == b.decision
+    assert a.errors == b.errors

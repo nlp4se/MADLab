@@ -262,3 +262,68 @@ def test_save_creates_parent_dirs(tmp_path):
 def test_load_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         load_config("this_file_does_not_exist_12345.json")
+
+
+# ---------------------------------------------------------------------------
+# Presentation-only ``ui`` layout (task 11.4)
+# ---------------------------------------------------------------------------
+
+_UI = {
+    "nodes": {
+        "alice": {"x": 10.5, "y": -20},
+        "__start__": {"x": -180, "y": 0},
+        "__end__": {"x": 400, "y": 0},
+        "ghost": {"x": 1, "y": 1},  # stale key: tolerated, not cross-validated
+    },
+    "edges": {
+        "alice->jury": {"x": 0, "y": 30},
+        "__start__->alice": {"x": -5, "y": 5},
+        "jury->__end__": {"x": 2.5, "y": -2.5},
+    },
+}
+
+
+def test_ui_is_optional_and_defaults_to_none():
+    cfg = _config()
+    assert cfg.ui is None
+    # Older artifacts without the key still import cleanly.
+    data = export_config(cfg)
+    data.pop("ui", None)
+    assert import_config(data).ui is None
+    assert CURRENT_SCHEMA_VERSION == "1.0"
+
+
+def test_ui_round_trips_through_export_import():
+    cfg = _config(ui=_UI)
+    exported = export_config(cfg)
+    assert exported["ui"]["nodes"]["__start__"] == {"x": -180.0, "y": 0.0}
+    assert exported["ui"]["edges"]["alice->jury"] == {"x": 0.0, "y": 30.0}
+    reloaded = import_config(export_config_json(cfg))
+    assert reloaded == cfg
+    assert reloaded.ui is not None
+    assert set(reloaded.ui.nodes) == set(_UI["nodes"])
+    assert set(reloaded.ui.edges) == set(_UI["edges"])
+
+
+def test_ui_partial_shapes_are_accepted():
+    assert _config(ui={}).ui.nodes == {}
+    assert _config(ui={"nodes": {"alice": {"x": 1, "y": 2}}}).ui.edges == {}
+
+
+@pytest.mark.parametrize(
+    "bad_ui",
+    [
+        {"nodes": {}, "zoom": 1.5},  # unknown key inside UiLayout
+        {"nodes": {"alice": {"x": 1}}},  # point missing y
+        {"nodes": {"alice": {"x": 1, "y": 2, "z": 3}}},  # extra key on a point
+        {"edges": {"alice->jury": {"x": "left", "y": 0}}},  # non-numeric
+        {"nodes": [1, 2]},  # wrong container type
+    ],
+)
+def test_ui_invalid_shapes_rejected(bad_ui):
+    data = export_config(_config())
+    data["ui"] = bad_ui
+    with pytest.raises(ConfigValidationError) as exc:
+        import_config(data)
+    fields = getattr(exc.value, "fields", [])
+    assert any(f["field"].startswith("ui") for f in fields)

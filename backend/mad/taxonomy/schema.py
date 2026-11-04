@@ -291,6 +291,40 @@ class InputSpec(_Base):
 
 
 # ---------------------------------------------------------------------------
+# Presentation-only canvas layout
+# ---------------------------------------------------------------------------
+
+
+class Point(_Base):
+    """A 2-D point in designer canvas (flow) coordinates."""
+
+    x: float
+    y: float
+
+
+class UiLayout(_Base):
+    """Presentation-only designer layout. The engine NEVER reads this.
+
+    It only records how the visual designer draws the graph so a saved config
+    reopens with the same picture:
+
+    * ``nodes`` — canvas position per node id. Keys are participant ids and may
+      also include the synthetic Start/End sentinels ``__start__`` / ``__end__``.
+    * ``edges`` — bend offset per canvas edge id (``source->target`` for real
+      edges, ``__start__->X`` / ``X->__end__`` for the IO connectors): the
+      offset of the edge's drag knob from the straight midpoint between the two
+      node centres.
+
+    Keys are deliberately NOT cross-validated against the graph: stale keys
+    (e.g. for a deleted node) are harmless and simply ignored by the designer.
+    Has no effect on execution, validation of the debate, or results.
+    """
+
+    nodes: dict[str, Point] = Field(default_factory=dict)
+    edges: dict[str, Point] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # Top-level artifact
 # ---------------------------------------------------------------------------
 
@@ -316,6 +350,9 @@ class MADConfig(_Base):
     interaction: Interaction = Field(default_factory=Interaction)
     agreement: Agreement = Field(default_factory=Agreement)
     input_spec: InputSpec = Field(default_factory=InputSpec)
+    # Presentation-only designer layout (node positions + edge bends). Ignored
+    # by the engine; optional so existing artifacts stay valid unchanged.
+    ui: Optional[UiLayout] = None
 
     # -- semantic / cross-field validators ---------------------------------
 
@@ -551,6 +588,8 @@ __all__ = [
     "Agreement",
     "AdHocField",
     "InputSpec",
+    "Point",
+    "UiLayout",
     "MADConfig",
     "validation_error_to_fields",
 ]
