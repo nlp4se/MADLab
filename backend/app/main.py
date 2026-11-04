@@ -31,6 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings, get_settings
 from app.db.session import configure, create_engine_for, init_db, session_scope
 from app.errors import register_exception_handlers
+from app.routers import assistant as assistant_router
 from app.routers import configs as configs_router
 from app.routers import datasets as datasets_router
 from app.routers import executions as executions_router
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(providers_router.router, prefix=API_PREFIX)
     app.include_router(datasets_router.router, prefix=API_PREFIX)
     app.include_router(executions_router.router, prefix=API_PREFIX)
+    app.include_router(assistant_router.router, prefix=API_PREFIX)
 
     return app
 

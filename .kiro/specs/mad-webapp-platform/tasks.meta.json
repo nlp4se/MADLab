@@ -894,6 +894,18 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793725169240
       }
+    ],
+    "11.1 Conversational MAD design assistant in the designer": [
+      {
+        "executionId": "aff22f8c-df73-42f5-adfa-08a57e03aff1",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793786606276
+      },
+      {
+        "executionId": "aff22f8c-df73-42f5-adfa-08a57e03aff1",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793787233415
+      }
     ]
   }
 }

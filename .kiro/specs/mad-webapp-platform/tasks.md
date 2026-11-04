@@ -1,4 +1,4 @@
-# Implementation Plan
+﻿# Implementation Plan
 
 Each task is incremental, test-backed, and references the requirements it fulfills. The order builds
 the headless engine first (so the taxonomy artifact and gold cases are provable without a UI), then
@@ -307,6 +307,28 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 - [x] 10.3 Finalize docs and setup instructions
   - Top-level + per-component READMEs: setup, run, and the gold-case walkthrough.
   - _Requirements: 14.5_
+
+---
+
+## Phase 11 — AI design assistant (chat-to-configure)
+
+- [x] 11.1 Conversational MAD design assistant in the designer
+  - Backend: `POST /api/assistant/design` — accepts the user message, the running conversation, the
+    current MAD artifact, and a chosen provider_id + model; returns a structured envelope that is
+    either a free-text clarifying question (when intent is ambiguous) or a proposed full `MADConfig`
+    artifact + a short explanation. A structured system prompt teaches the taxonomy + exact JSON
+    schema (seeded from the catalog so only valid keys/values are used), instructs the model to ask
+    verification questions before proposing when needed, keeps it scoped to MAD-config design, and
+    enforces the response envelope. Proposed artifacts are validated through `MADConfig` before being
+    returned. Calls go through the existing LiteLLM provider layer (keys decrypted at call time);
+    provider + model are configurable per request.
+  - Frontend: a floating chat button on the designer canvas opens a popup panel. Free chat; clarifying
+    questions render as chat turns; a proposed config is shown for **review** with an **Apply to
+    canvas** action that loads it into the designer store (two-way sync persists on Save). Provider +
+    model are selectable in the panel. Provider errors (e.g. an unscoped key) surface clearly.
+  - Tests: backend route (mocked provider) for the question vs. proposal envelopes and artifact
+    validation; frontend component test for the chat flow + apply-to-canvas.
+  - _Requirements: 4.1, 4.2, 6.1, 6.8, 7.3, 8.6, 12.2_
 ```
 
 ---
