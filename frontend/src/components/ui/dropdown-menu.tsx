@@ -1,4 +1,5 @@
 ﻿import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -8,23 +9,35 @@ import { cn } from "@/lib/utils";
  * Mirrors the small slice of the shadcn/ui DropdownMenu API the app needs —
  * a trigger that toggles a popover of `DropdownMenuItem`s — without pulling in
  * the full Radix menu primitive (only `@radix-ui/react-slot` is scaffolded).
+ *
+ * The content is rendered in a PORTAL to `document.body`, positioned next to the
+ * trigger. Portalling keeps the menu from being clipped or stacked below
+ * sibling layers — notably the React Flow canvas in the designer toolbar, which
+ * otherwise painted over (and swallowed clicks on) a menu rendered inline.
  * Closes on outside click, Escape, or after an item is chosen.
  */
 interface MenuContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement>;
+  contentRef: React.RefObject<HTMLDivElement>;
 }
 
 const MenuContext = React.createContext<MenuContextValue | null>(null);
 
 export function DropdownMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (
+        !triggerRef.current?.contains(t) &&
+        !contentRef.current?.contains(t)
+      ) {
         setOpen(false);
       }
     };
@@ -40,10 +53,8 @@ export function DropdownMenu({ children }: { children: React.ReactNode }) {
   }, [open]);
 
   return (
-    <MenuContext.Provider value={{ open, setOpen }}>
-      <div ref={ref} className="relative inline-block text-left">
-        {children}
-      </div>
+    <MenuContext.Provider value={{ open, setOpen, triggerRef, contentRef }}>
+      <div className="relative inline-block text-left">{children}</div>
     </MenuContext.Provider>
   );
 }
@@ -55,6 +66,7 @@ export function DropdownMenuTrigger({
 }) {
   const ctx = React.useContext(MenuContext);
   return React.cloneElement(children, {
+    ref: ctx?.triggerRef as React.Ref<HTMLElement>,
     "aria-haspopup": "menu",
     "aria-expanded": ctx?.open ?? false,
     onClick: (e: React.MouseEvent) => {
@@ -62,7 +74,7 @@ export function DropdownMenuTrigger({
       children.props.onClick?.(e as React.MouseEvent<HTMLElement>);
       ctx?.setOpen(!ctx.open);
     },
-  } as Partial<React.HTMLAttributes<HTMLElement>>);
+  } as Partial<React.HTMLAttributes<HTMLElement>> & { ref?: React.Ref<HTMLElement> });
 }
 
 export function DropdownMenuContent({
@@ -75,20 +87,40 @@ export function DropdownMenuContent({
   children: React.ReactNode;
 }) {
   const ctx = React.useContext(MenuContext);
-  if (!ctx?.open) return null;
-  // Stop pointer/mouse events from reaching anything underneath the menu. When
-  // the menu overlays a React Flow canvas (the designer toolbar), RF's pane
-  // listeners would otherwise capture the press and the item click would be
-  // lost; keeping the events inside the menu makes items clickable there. The
-  // dropdown's own outside-click close uses a document listener, so trapping
-  // events *inside* the menu does not affect closing on a true outside click.
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  // Position the portalled menu just below the trigger, aligned to its edge.
+  React.useLayoutEffect(() => {
+    if (!ctx?.open) {
+      setPos(null);
+      return;
+    }
+    const rect = ctx.triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const MENU_MIN_WIDTH = 160;
+    const left =
+      align === "end"
+        ? rect.right - MENU_MIN_WIDTH + window.scrollX
+        : rect.left + window.scrollX;
+    setPos({
+      top: rect.bottom + 4 + window.scrollY,
+      left: Math.max(8 + window.scrollX, left),
+    });
+  }, [ctx?.open, align]);
+
+  if (!ctx?.open || pos === null) return null;
+
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  return (
+
+  return createPortal(
     <div
+      ref={ctx.contentRef}
       role="menu"
+      style={{ position: "absolute", top: pos.top, left: pos.left }}
       className={cn(
-        "absolute z-50 mt-1 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
-        align === "end" ? "right-0" : "left-0",
+        "z-[1000] min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         className,
       )}
       onMouseDown={stop}
@@ -96,7 +128,8 @@ export function DropdownMenuContent({
       onClick={stop}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
