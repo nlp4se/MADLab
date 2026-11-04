@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+﻿import { useCallback, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import ReactFlow, {
@@ -19,28 +19,37 @@ import { AlertTriangle, Wrench } from "lucide-react";
 
 import { configsApi, type JsonObject } from "@/api";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
+import type { ApplicableTopology } from "./artifact";
 import { DesignerToolbar } from "./DesignerToolbar";
 import { Inspector } from "./panels/Inspector";
-import { ParticipantNode, type ParticipantNodeData } from "./ParticipantNode";
-import { toFlowEdges, toFlowNodes } from "./flowGraph";
+import { ParticipantNode } from "./ParticipantNode";
+import { END_NODE_ID, EndNode, START_NODE_ID, StartNode } from "./StartEndNodes";
+import {
+  isSyntheticId,
+  toFlowEdges,
+  toFlowNodes,
+  toStartEndEdges,
+  toStartEndNodes,
+} from "./flowGraph";
 import { useDesignerStore } from "./designerStore";
+import { topologyLabel } from "./topology";
 import { useConfigDetailQuery, useUpdateConfig } from "./useConfigDetail";
 
 /** Register custom node types once (stable reference). */
-const NODE_TYPES = { participant: ParticipantNode } as const;
+const NODE_TYPES = {
+  participant: ParticipantNode,
+  start: StartNode,
+  end: EndNode,
+} as const;
 
 /**
- * Visual debate designer — canvas (task 8.3, Reqs 6.1, 6.2, 6.4, 6.5, 6.7, 6.8).
+ * Visual debate designer — canvas (Reqs 6.1, 6.2, 6.4, 6.5, 6.7, 6.8).
  *
- * Loads a config by the `:configId` route param (GET /api/configs/{id}), seeds
- * the designer store with its artifact, and renders the `G=(V,E)` graph with
- * React Flow: participants as nodes (role icon + model badge), communication as
- * directed edges. Canvas gestures (move/connect/remove) and toolbar actions
- * (add node, apply topology, auto-layout, save) all flow through the store so
- * the artifact and the canvas stay synchronized in both directions (Req 6.8).
- *
- * The inspector and dimension panels are task 8.4; this page focuses the
- * canvas<->artifact sync and the save path.
+ * Loads a config by the `:configId` route param, seeds the designer store, and
+ * renders the `G=(V,E)` graph with React Flow: participants as nodes (role icon
+ * + model badge, labelled in/out ports), communication as directed edges, plus
+ * synthetic Start/End nodes that visualise where the instance input enters and
+ * the final output leaves (the Start/End are visual only — not in the artifact).
  */
 export function DesignerPage() {
   const params = useParams<{ configId?: string }>();
@@ -51,7 +60,6 @@ export function DesignerPage() {
   const loadArtifact = useDesignerStore((s) => s.loadArtifact);
   const artifact = useDesignerStore((s) => s.artifact);
 
-  // Seed the store whenever a freshly fetched config arrives.
   useEffect(() => {
     if (data) loadArtifact(data.id, data.artifact);
   }, [data, loadArtifact]);
@@ -115,30 +123,49 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const selectedNodeId = selection?.kind === "node" ? selection.id : null;
   const selectedEdgeId = selection?.kind === "edge" ? selection.id : null;
 
-  // Derive React Flow nodes/edges from the artifact + layout (artifact -> canvas).
-  const nodes = useMemo<FlowNode<ParticipantNodeData>[]>(
-    () => (artifact ? toFlowNodes(artifact, layout, selectedNodeId) : []),
+  // Derive React Flow nodes/edges from the artifact + layout. The real graph
+  // (V/E) and the synthetic Start/End overlay are projected separately then
+  // concatenated, so `toFlowEdges` stays a faithful 1:1 of the artifact.
+  const nodes = useMemo<FlowNode[]>(
+    () =>
+      artifact
+        ? [
+            ...toFlowNodes(artifact, layout, selectedNodeId),
+            ...toStartEndNodes(artifact, layout),
+          ]
+        : [],
     [artifact, layout, selectedNodeId],
   );
   const edges = useMemo<FlowEdge[]>(
-    () => (artifact ? toFlowEdges(artifact, selectedEdgeId) : []),
+    () =>
+      artifact
+        ? [...toFlowEdges(artifact, selectedEdgeId), ...toStartEndEdges(artifact)]
+        : [],
     [artifact, selectedEdgeId],
   );
 
-  // Canvas gestures -> store mutations (canvas -> artifact).
+  // Canvas gestures -> store mutations (canvas -> artifact). Synthetic Start/End
+  // ids are ignored so they can never mutate the artifact.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
+        const changeId = "id" in change ? change.id : undefined;
+        const isSynthNode =
+          changeId === START_NODE_ID || changeId === END_NODE_ID;
         if (change.type === "position" && change.position) {
+          // Persist drags for participants AND the synthetic Start/End nodes
+          // (their positions live in the UI-only layout map, keyed by the
+          // sentinel ids — never in the artifact).
           moveNode(change.id, change.position);
+        } else if (isSynthNode) {
+          // Start/End are not removable or selectable; ignore other changes.
+          continue;
         } else if (change.type === "remove") {
           removeNode(change.id);
         } else if (change.type === "select") {
           if (change.selected) setSelection({ kind: "node", id: change.id });
         }
       }
-      // applyNodeChanges keeps React Flow's internal bookkeeping happy; the
-      // derived `nodes` remain the source of truth on the next render.
       void applyNodeChanges(changes, nodes);
     },
     [moveNode, removeNode, setSelection, nodes],
@@ -147,6 +174,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       for (const change of changes) {
+        if ("id" in change && isSyntheticId(change.id)) continue;
         if (change.type === "remove") {
           removeEdge(change.id);
         } else if (change.type === "select" && change.selected) {
@@ -159,10 +187,15 @@ function DesignerCanvas({ configId }: { configId: number }) {
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (connection.source && connection.target) {
+      // Never allow connecting to/from the synthetic Start/End nodes.
+      if (
+        connection.source &&
+        connection.target &&
+        !isSyntheticId(connection.source) &&
+        !isSyntheticId(connection.target)
+      ) {
         connectNodes(connection.source, connection.target);
       }
-      // addEdge is a no-op on our derived edges but documents intent.
       void addEdge(connection, edges);
     },
     [connectNodes, edges],
@@ -170,26 +203,41 @@ function DesignerCanvas({ configId }: { configId: number }) {
 
   const onPaneClick = useCallback(() => setSelection(null), [setSelection]);
 
+  // Apply a topology template, warning first if an existing graph would be
+  // overwritten (Req 6.5 — initializing a structure replaces the current edges).
+  const handleApplyTopology = useCallback(
+    (topology: ApplicableTopology) => {
+      const hasGraph =
+        (artifact?.participants.nodes.length ?? 0) > 0 &&
+        (artifact?.interaction.topology.edges.length ?? 0) > 0;
+      if (hasGraph) {
+        const ok = window.confirm(
+          `Apply the "${topologyLabel(topology)}" topology?\n\n` +
+            "This regenerates the connections between the current participants " +
+            "and overrides the existing edges. Participant nodes are kept.",
+        );
+        if (!ok) return;
+      }
+      applyTopology(topology);
+    },
+    [artifact, applyTopology],
+  );
+
   const handleSave = useCallback(async () => {
     if (!artifact) return;
     const body = { artifact: artifact as unknown as JsonObject };
-    // Surface server-side validation errors before persisting (Req 7.3).
     try {
       const result = await configsApi.validate({
         artifact: artifact as unknown as JsonObject,
       });
       setValidationErrors(result.errors);
-      if (!result.valid) return; // don't persist an invalid artifact
+      if (!result.valid) return;
     } catch {
-      // If the validate endpoint is unreachable, fall through and let the
-      // save itself report any error rather than blocking the user.
+      /* fall through; the save itself will surface any error */
     }
     updateConfig.mutate(body, { onSuccess: () => markSaved() });
   }, [artifact, updateConfig, markSaved, setValidationErrors]);
 
-  // Client-side under-development detection (Req 7.5): collect the artifact's
-  // selected taxonomy values and intersect with the catalog's non-executable
-  // set so we can badge + warn before a run.
   const underDevSelections = useMemo(
     () => (artifact ? collectUnderDev(artifact, isUnderDevelopment, getValue) : []),
     [artifact, isUnderDevelopment, getValue],
@@ -199,7 +247,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
     <div className="flex h-full flex-col">
       <DesignerToolbar
         onAddNode={() => addNode()}
-        onApplyTopology={applyTopology}
+        onApplyTopology={handleApplyTopology}
         onAutoLayout={relayout}
         onDeleteSelection={() => {
           if (selection?.kind === "node") removeNode(selection.id);
