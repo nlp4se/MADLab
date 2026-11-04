@@ -202,3 +202,102 @@ def test_evaluate_transcripts_matches_direct_evaluate():
     assert result.count == 4
     assert sum(1 for r in result.per_instance if r.correct) == 3
     assert result.metrics == evaluate(labels, truth).metrics
+
+
+# ---------------------------------------------------------------------------
+# structured-decision label extraction (task 11.12)
+# ---------------------------------------------------------------------------
+
+# Execution 3's agreement output_schema: the provider-style envelope with the
+# JSON schema proper under "schema" (a lone enum property "class").
+EXEC3_SCHEMA = {
+    "name": "requirements-schema",
+    "description": "A schema for classifying requirements into categories",
+    "schema": {
+        "type": "object",
+        "properties": {"class": {"type": "string", "enum": ["F", "NF"]}},
+    },
+}
+
+# Execution 3, instance 0: the judge ignored the enum property and replied with
+# a multi-field object (accepted because the schema has no "required").
+EXEC3_DECISION = {
+    "requirement": "The system shall have a MDI form that allows for the "
+    "viewing of the graph and the data table.",
+    "debaters_arguments": [
+        "Debater 1: This is a Functional requirement because it describes a "
+        "specific system feature.",
+        "Debater 2: This is a Non-Functional requirement (Usability / "
+        "Interface).",
+    ],
+    "moderator_evaluation": "Its primary purpose is to provide the operational "
+    "capability for users to view data tables and graphs.",
+    "final_classification": "Functional",
+}
+
+
+def _judge_result(obj):
+    return AgreementResult(
+        decision=obj,
+        authority="judge_based",
+        resolution="argument_evaluation",
+        structured=obj,
+    )
+
+
+def test_decision_label_uses_known_label_key_for_multi_field_object():
+    assert decision_label(_judge_result(EXEC3_DECISION), EXEC3_SCHEMA) == "Functional"
+    assert decision_label(_judge_result(EXEC3_DECISION)) == "Functional"
+
+
+def test_decision_label_uses_wrapped_schema_enum_property():
+    assert decision_label(_judge_result({"class": "F"}), EXEC3_SCHEMA) == "F"
+
+
+def test_decision_label_prefers_schema_enum_property_over_label_keys():
+    schema = {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": ["F", "NF"]},
+            "reason": {"type": "string"},
+        },
+    }
+    obj = {"reason": "Describes behaviour.", "answer": "maybe", "category": "NF"}
+    assert decision_label(_judge_result(obj), schema) == "NF"
+    # Without the schema the known key wins.
+    assert decision_label(_judge_result(obj)) == "maybe"
+
+
+def test_decision_label_matches_label_keys_case_insensitively():
+    obj = {"Rationale": "Because.", "Verdict": "NF"}
+    assert decision_label(_judge_result(obj)) == "NF"
+
+
+def test_decision_label_none_for_multi_field_object_without_label():
+    obj = {"summary": "Long text.", "notes": ["a", "b"]}
+    assert decision_label(_judge_result(obj)) is None
+
+
+def test_runner_aggregate_metrics_omitted_instead_of_crashing():
+    """An unscorable label mix must not crash finalize (execution 3 got stuck)."""
+    from app.jobs.runner import _InstanceOutcome, _aggregate_metrics
+
+    outcomes = [
+        _InstanceOutcome(
+            index=i,
+            instance={},
+            ground_truth="F",
+            transcript=_transcript_with_decision(_judge_result(obj)),
+            output_schema=EXEC3_SCHEMA,
+        )
+        for i, obj in enumerate(
+            [{"summary": "no label", "notes": "x"}, {"class": "F"}]
+        )
+    ]
+    assert _aggregate_metrics(outcomes) is None
+
+    outcomes[0].transcript = _transcript_with_decision(_judge_result(EXEC3_DECISION))
+    metrics = _aggregate_metrics(outcomes)
+    assert metrics is not None
+    assert metrics["scored_count"] == 2
+    assert metrics["overall"]["accuracy"] == 0.5

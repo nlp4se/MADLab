@@ -80,6 +80,9 @@ class _InstanceOutcome:
     ground_truth: Optional[Any]
     transcript: Optional[Transcript] = None
     error: Optional[str] = None
+    # The agreement output_schema, used to derive the scored label from a
+    # structured decision (task 11.12).
+    output_schema: Optional[dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +305,7 @@ def _execute_instance(
         instance=resolved.instance,
         ground_truth=resolved.ground_truth,
         transcript=transcript,
+        output_schema=config.agreement.output_schema,
     )
 
 
@@ -321,7 +325,7 @@ def _write_instance(
         transcript_json["decision"] if transcript_json else None
     )
     prediction = (
-        prediction_from_transcript(outcome.transcript)
+        prediction_from_transcript(outcome.transcript, outcome.output_schema)
         if outcome.transcript is not None
         else None
     )
@@ -451,8 +455,13 @@ def _aggregate_metrics(outcomes: list[_InstanceOutcome]) -> Optional[dict[str, A
     transcripts = [o.transcript for o in scorable]
     ground_truth = [o.ground_truth for o in scorable]
     try:
-        result = evaluate_transcripts(transcripts, ground_truth)
-    except MADError:
+        result = evaluate_transcripts(
+            transcripts, ground_truth, scorable[0].output_schema
+        )
+    except (MADError, ValueError, TypeError):
+        # sklearn rejects unscorable label mixes (e.g. a missing prediction
+        # next to string labels). Omit the aggregate rather than crash the
+        # finalize step, which would leave the run stuck in "running".
         return None
     return {
         "scored_count": result.count,

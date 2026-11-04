@@ -81,9 +81,16 @@ constraint. The parser is deliberately lenient about the judge's surface form:
   such property (the RE binary gold case: ``{class: [F, NF]}`` with a reply of
   ``"F"`` resolves to ``{"class": "F"}``).
 
+The schema may be wrapped in the provider envelope (``{name, description,
+schema}``); it is unwrapped by :func:`mad.output_schema.unwrap_output_schema`,
+the same normalizer the provider request and label extraction use (task 11.13).
+
 Validation uses :mod:`jsonschema` when installed (it is, in this backend) and
-otherwise falls back to a pragmatic check (required keys present + ``enum``
-membership). **Decision on an invalid reply:** an output that cannot be parsed
+otherwise falls back to a pragmatic check (required keys present, no extra keys
+under ``additionalProperties: false``, ``enum`` membership). Either way, a reply
+that carries none of the schema's declared properties is rejected, since a
+schema without ``required`` would otherwise accept any object.
+**Decision on an invalid reply:** an output that cannot be parsed
 or fails validation does *not* raise — it is reported as ``undecided=True`` with
 the raw text preserved in ``decision`` and the reason in ``detail``. This keeps
 a single malformed model reply from aborting a run while still signalling the
@@ -98,6 +105,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Union
 
 from mad.errors import ExecutionError, UnderDevelopment
+from mad.output_schema import declared_properties, unwrap_output_schema
 from mad.taxonomy.schema import Agreement
 
 # A judge callable maps an opaque context (transcript, summary, prompt — the
@@ -669,7 +677,12 @@ def _parse_against_schema(
     coerced into the schema's single enum-constrained string property (the RE
     binary gold case). Validation prefers :mod:`jsonschema` when available and
     otherwise applies a pragmatic required-keys + enum-membership check.
+
+    ``schema`` may be wrapped in the provider envelope (``{name, schema}``);
+    it is unwrapped first (:func:`mad.output_schema.unwrap_output_schema`) so
+    validation runs against the JSON schema proper (task 11.13).
     """
+    schema = unwrap_output_schema(schema) or schema
     obj = _coerce_to_object(raw, schema)
     if obj is None:
         return None, (
@@ -715,9 +728,13 @@ def _coerce_to_object(
     return None
 
 
-def _single_enum_property(schema: dict[str, Any]) -> Optional[str]:
-    """Return the name of the lone enum-constrained string property, if any."""
-    if schema.get("type") != "object":
+def _single_enum_property(schema: Any) -> Optional[str]:
+    """Return the name of the lone enum-constrained string property, if any.
+
+    Accepts a bare or enveloped schema (unwrapped first).
+    """
+    schema = unwrap_output_schema(schema)
+    if schema is None or schema.get("type") != "object":
         return None
     props = schema.get("properties")
     if not isinstance(props, dict):
@@ -736,27 +753,47 @@ def _single_enum_property(schema: dict[str, Any]) -> Optional[str]:
 
 
 def _validate_object(obj: dict[str, Any], schema: dict[str, Any]) -> Optional[str]:
-    """Validate ``obj`` against ``schema``; return an error reason or ``None``."""
+    """Validate ``obj`` against ``schema``; return an error reason or ``None``.
+
+    Full JSON Schema validation (``required``, ``additionalProperties``, enums,
+    types, ...) via :mod:`jsonschema`, else :func:`_pragmatic_validate`. On top
+    of that, a reply that carries *none* of the schema's declared properties is
+    rejected (:func:`_off_schema_reason`): with no ``required`` list JSON Schema
+    would accept any object, which is how off-schema replies used to pass.
+    """
     try:
         import jsonschema  # type: ignore
     except Exception:  # pragma: no cover - exercised only without the dep
-        return _pragmatic_validate(obj, schema)
+        error = _pragmatic_validate(obj, schema)
+    else:
+        error = None
+        try:
+            jsonschema.validate(instance=obj, schema=schema)
+        except jsonschema.ValidationError as exc:  # type: ignore[attr-defined]
+            # exc.message is concise and UI-friendly.
+            error = exc.message
+        except jsonschema.SchemaError as exc:  # type: ignore[attr-defined]
+            return f"invalid output_schema: {exc.message}"
+    return error or _off_schema_reason(obj, schema)
 
-    try:
-        jsonschema.validate(instance=obj, schema=schema)
-    except jsonschema.ValidationError as exc:  # type: ignore[attr-defined]
-        # exc.message is concise and UI-friendly.
-        return exc.message
-    except jsonschema.SchemaError as exc:  # type: ignore[attr-defined]
-        return f"invalid output_schema: {exc.message}"
-    return None
+
+def _off_schema_reason(obj: dict[str, Any], schema: dict[str, Any]) -> Optional[str]:
+    """Reject a reply (even ``{}``) that shares no key with the declared properties."""
+    props = declared_properties(schema)
+    if not props or any(key in props for key in obj):
+        return None
+    return (
+        f"reply has none of the schema's properties {sorted(props)} "
+        f"(got {sorted(map(str, obj))})"
+    )
 
 
 def _pragmatic_validate(obj: dict[str, Any], schema: dict[str, Any]) -> Optional[str]:
-    """Dependency-free fallback: required keys present + enum membership.
+    """Dependency-free fallback: required keys, extra keys, enum membership.
 
-    Checks ``required`` keys exist and that any property with an ``enum`` holds
-    one of the allowed values. Unknown/extra keys are tolerated. This is the
+    Checks ``required`` keys exist, rejects keys outside ``properties`` when
+    the schema sets ``additionalProperties: false``, and checks that any
+    property with an ``enum`` holds one of the allowed values. This is the
     light check used only when :mod:`jsonschema` is unavailable.
     """
     required = schema.get("required", [])
@@ -765,6 +802,11 @@ def _pragmatic_validate(obj: dict[str, Any], schema: dict[str, Any]) -> Optional
             return f"missing required key '{key}'"
 
     props = schema.get("properties", {})
+    if schema.get("additionalProperties") is False and isinstance(props, dict):
+        extra = sorted(str(k) for k in obj if k not in props)
+        if extra:
+            return f"additional properties are not allowed ({', '.join(extra)})"
+
     if isinstance(props, dict):
         for name, spec in props.items():
             if name not in obj or not isinstance(spec, dict):

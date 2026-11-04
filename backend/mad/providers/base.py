@@ -23,6 +23,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional, Protocol, Sequence, runtime_checkable
 
+from mad.output_schema import unwrap_output_schema
+
 # A chat role. ``system``/``user``/``assistant`` are the core set; ``tool`` is
 # allowed for providers/flows that surface tool/function results as messages.
 Role = Literal["system", "user", "assistant", "tool"]
@@ -285,7 +287,8 @@ class MockModelClient:
         parsed = _try_parse_json(text)
         if isinstance(parsed, dict):
             return parsed
-        return _default_object_from_schema(schema)
+        # Accept the provider envelope like the real client (task 11.13).
+        return _default_object_from_schema(unwrap_output_schema(schema) or schema)
 
 
 def _try_parse_json(text: str) -> Any:

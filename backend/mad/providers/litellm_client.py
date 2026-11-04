@@ -26,7 +26,10 @@ Design (see design.md "Provider Abstraction & Credentials"):
   requires litellm or credentials.
 * Structured output: when a ``response_schema`` is supplied the adapter first
   attempts provider-native JSON-schema / JSON-object output
-  (``structured_mode="native"``). If native structured output is unsupported or
+  (``structured_mode="native"``), with the schema normalised by
+  :mod:`mad.output_schema` (envelope unwrapped, ``strict`` only when the
+  schema allows it; see :func:`build_response_format`). If native structured
+  output is unsupported or
   fails, it falls back to a JSON-mode approach — inject a schema instruction into
   the prompt, call normally, then parse the JSON from the text
   (``structured_mode="json_mode_fallback"``). If parsing still fails, a
@@ -42,6 +45,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from mad.errors import ProviderError
+from mad.output_schema import NormalizedOutputSchema, normalize_output_schema
 from mad.providers.base import Message, ModelResponse, StructuredMode, Usage
 
 # Supported provider kinds. ``vllm``/``openai_compatible`` (and LM Studio) all
@@ -182,6 +186,32 @@ def _resolve_model_and_kwargs(
 def _messages_to_litellm(messages: list[Message]) -> list[dict[str, str]]:
     """Translate :class:`Message` objects into LiteLLM's ``messages`` format."""
     return [{"role": m.role, "content": m.content} for m in messages]
+
+
+def build_response_format(normalized: NormalizedOutputSchema) -> dict[str, Any]:
+    """The OpenAI-shaped ``response_format`` sent for every provider kind.
+
+    LiteLLM translates it per provider (task 11.13 investigation, litellm
+    1.106): OpenAI and OpenAI-compatible endpoints receive it as-is; Gemini
+    takes ``json_schema.schema`` as ``response_json_schema`` / ``response_schema``
+    (``strict`` removed); Anthropic takes ``json_schema.schema`` as its
+    ``output_format`` schema or a forced JSON tool's ``input_schema``. So the
+    schema here must be the JSON schema proper, never the user's
+    ``{name, schema}`` envelope (which used to be wrapped a second time and
+    left every provider unconstrained).
+
+    ``strict`` is requested only when the schema satisfies the strict rules
+    (closed objects, all properties required); OpenAI rejects a strict request
+    otherwise, which used to push every call onto the prompt-only fallback.
+    """
+    json_schema: dict[str, Any] = {
+        "name": normalized.name,
+        "schema": normalized.schema,
+        "strict": normalized.request_strict,
+    }
+    if normalized.description:
+        json_schema["description"] = normalized.description
+    return {"type": "json_schema", "json_schema": json_schema}
 
 
 def _schema_instruction(response_schema: dict) -> str:
@@ -348,15 +378,11 @@ class LiteLLMClient:
         failure raises :class:`ProviderError` rather than silently returning
         ``structured=None``.
         """
+        normalized = normalize_output_schema(response_schema) or NormalizedOutputSchema(
+            schema=response_schema
+        )
         native_params = dict(params)
-        native_params["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "mad_structured_output",
-                "schema": response_schema,
-                "strict": True,
-            },
-        }
+        native_params["response_format"] = build_response_format(normalized)
 
         # 1) Native JSON-schema structured output.
         try:
@@ -372,7 +398,9 @@ class LiteLLMClient:
             pass
 
         # 2) JSON-mode fallback: instruct the model, parse the text.
-        fallback_messages = _inject_schema_instruction(litellm_messages, response_schema)
+        fallback_messages = _inject_schema_instruction(
+            litellm_messages, normalized.schema
+        )
         response = self._call(fallback_messages, model, params)
         parsed = _extract_json(response.text)
         if parsed is not None:
