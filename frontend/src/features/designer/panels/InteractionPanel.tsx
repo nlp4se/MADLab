@@ -1,11 +1,10 @@
+﻿import { MessagesSquare, Network, Workflow } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
-import type {
-  FormatArtifact,
-  InteractionArtifact,
-  TopologyPattern,
-} from "../artifact";
+import type { FormatArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
+import { topologyLabel } from "../topology";
 import {
   Disclosure,
   Field,
@@ -15,19 +14,20 @@ import {
 } from "./fields";
 
 /**
- * Interaction-dimension panel (Req 2.*, 7.4). Configures, all data-driven from
- * the taxonomy catalog:
- *  - topology meta: adaptability / structure / pattern
+ * Interaction-dimension panel (Req 2.*, 7.4).
+ *
+ * The TOPOLOGY (structure/pattern and the edge set E) is designed on the canvas
+ * and via the toolbar's topology templates — NOT here. Editing the structure in
+ * a form while the graph is drawn on the canvas was misleading, so this panel no
+ * longer offers topology-structure selects; it shows a read-only summary of the
+ * current topology (a reminder that it is canvas-driven) and configures the
+ * remaining Interaction concerns:
  *  - protocol: mechanism / max_rounds / ordering
  *  - format: syntax / content strategy + metadata signals / memory
- *
- * The edge set itself (E) is edited on the canvas; this panel edits the
- * surrounding topology metadata and leaves the edges untouched.
  */
 export function InteractionPanel() {
-  const { getSubDimension, isUnderDevelopment } = useTaxonomy();
+  const { getSubDimension, getValue, isUnderDevelopment } = useTaxonomy();
   const artifact = useDesignerStore((s) => s.artifact);
-  const updateTopologyMeta = useDesignerStore((s) => s.updateTopologyMeta);
   const updateProtocol = useDesignerStore((s) => s.updateProtocol);
   const updateFormat = useDesignerStore((s) => s.updateFormat);
 
@@ -38,15 +38,24 @@ export function InteractionPanel() {
   const format = artifact.interaction.format ?? {};
   const content = format.content ?? {};
 
-  const adaptabilitySub = getSubDimension("interaction", "topology_adaptability");
-  const structureSub = getSubDimension("interaction", "topology_structure");
-  const patternSub = getSubDimension("interaction", "topology_pattern");
   const mechanismSub = getSubDimension("interaction", "protocol_mechanism");
   const orderingSub = getSubDimension("interaction", "protocol_ordering");
   const syntaxSub = getSubDimension("interaction", "format_syntax");
   const contentSub = getSubDimension("interaction", "format_content");
   const metadataSub = getSubDimension("interaction", "format_content_metadata");
   const memorySub = getSubDimension("interaction", "format_memory");
+
+  const structureLabel =
+    getValue("interaction", "topology_structure", topology.structure ?? "")
+      ?.label ??
+    topologyLabel(
+      (topology.structure ?? "fully_connected") as never,
+    );
+  const patternLabel = topology.pattern
+    ? getValue("interaction", "topology_pattern", topology.pattern)?.label ??
+      topologyLabel(topology.pattern as never)
+    : null;
+  const edgeCount = topology.edges.length;
 
   const toggleMetadata = (key: string, next: boolean) => {
     const set = new Set(content.metadata_signals ?? []);
@@ -57,50 +66,34 @@ export function InteractionPanel() {
 
   return (
     <div className="space-y-6">
-      {/* --- Topology --- */}
-      <FieldGroup title="Topology" tone="structured">
-        {adaptabilitySub ? (
-          <TaxonomySelect
-            sub={adaptabilitySub}
-            value={topology.adaptability}
-            onChange={(v) =>
-              updateTopologyMeta({ adaptability: v as "static" | "dynamic" })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="topo-adapt"
-          />
-        ) : null}
-        {structureSub ? (
-          <TaxonomySelect
-            sub={structureSub}
-            value={topology.structure}
-            onChange={(v) =>
-              updateTopologyMeta({
-                structure: v as InteractionArtifact["topology"]["structure"],
-                // clear the pattern when leaving structured_network
-                pattern:
-                  v === "structured_network" ? topology.pattern ?? null : null,
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="topo-structure"
-          />
-        ) : null}
-        {patternSub && topology.structure === "structured_network" ? (
-          <TaxonomySelect
-            sub={patternSub}
-            value={topology.pattern ?? undefined}
-            onChange={(v) =>
-              updateTopologyMeta({ pattern: v as TopologyPattern })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="topo-pattern"
-          />
-        ) : null}
+      {/* --- Topology (read-only summary; edited on the canvas/toolbar) --- */}
+      <FieldGroup title="Topology" tone="structured" icon={Network}>
+        <div className="rounded-md border bg-muted/40 p-3 text-sm">
+          <p className="flex items-center gap-1.5 font-medium">
+            <Workflow className="size-4 text-interaction" aria-hidden />
+            {structureLabel}
+            {patternLabel ? (
+              <span className="text-muted-foreground">· {patternLabel}</span>
+            ) : null}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {edgeCount} {edgeCount === 1 ? "edge" : "edges"}. The topology is
+            designed on the canvas — use the <strong>Topology</strong> button in
+            the toolbar to apply a template, or draw edges between nodes.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            <strong>Edges set visibility, not turn order.</strong> An arrow
+            A&nbsp;→&nbsp;B means B can read A''s messages on its turn; a node
+            with several outgoing arrows is simply read by several others.
+            <em>When</em> each agent speaks is decided by the{" "}
+            <strong>Protocol</strong> below (its mechanism and ordering), not by
+            the arrows.
+          </p>
+        </div>
       </FieldGroup>
 
       {/* --- Protocol --- */}
-      <FieldGroup title="Protocol" tone="structured">
+      <FieldGroup title="Protocol" tone="structured" icon={Workflow}>
         {mechanismSub ? (
           <TaxonomySelect
             sub={mechanismSub}
@@ -147,7 +140,7 @@ export function InteractionPanel() {
       </FieldGroup>
 
       {/* --- Format --- */}
-      <FieldGroup title="Format" tone="structured">
+      <FieldGroup title="Format" tone="structured" icon={MessagesSquare}>
         {syntaxSub ? (
           <TaxonomySelect
             sub={syntaxSub}

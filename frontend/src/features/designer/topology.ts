@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client-side topology builders (Req 6.5).
  *
  * These mirror the backend builders in `backend/mad/taxonomy/templates.py`
@@ -10,6 +10,7 @@
  * Each builder is a pure function mapping an ordered list of node ids to a list
  * of directed `EdgeArtifact`s. The edge counts match the backend's for parity:
  *   - fully_connected: n(n-1)
+ *   - grouped:         fully-connected within each group (no cross-group edges)
  *   - chain:           n-1
  *   - ring:            n (n >= 2)
  *   - star:            n-1 (every node -> center)
@@ -18,12 +19,23 @@
  *   - sparse:          n (each node -> next successor, wrapping; == ring)
  *   - bipartite:       |A|*|B|
  */
-import type {
-  ApplicableTopology,
-  EdgeArtifact,
-  TopologyArtifact,
-  TopologyPattern,
+import {
+  APPLICABLE_TOPOLOGIES,
+  type ApplicableTopology,
+  type EdgeArtifact,
+  type TopologyArtifact,
+  type TopologyPattern,
 } from "./artifact";
+
+export { APPLICABLE_TOPOLOGIES };
+export type { ApplicableTopology };
+
+/** The three topology *structures* the toolbar groups templates under. */
+export const TOPOLOGY_STRUCTURES = [
+  "fully_connected",
+  "grouped",
+  "structured_network",
+] as const;
 
 function edge(source: string, target: string): EdgeArtifact {
   return { source, target, directed: true };
@@ -35,6 +47,21 @@ export function fullyConnected(nodes: string[]): EdgeArtifact[] {
     for (const v of nodes) {
       if (u !== v) edges.push(edge(u, v));
     }
+  }
+  return edges;
+}
+
+/**
+ * Divided into groups: fully-connected within each group, no edges across
+ * groups. With no explicit group assignment yet, split the nodes into roughly
+ * two even groups — a sensible default the user can then edit by hand.
+ */
+export function grouped(nodes: string[], groupCount = 2): EdgeArtifact[] {
+  const count = Math.max(1, Math.min(groupCount, nodes.length || 1));
+  const groups = splitInto(nodes, count);
+  const edges: EdgeArtifact[] = [];
+  for (const group of groups) {
+    edges.push(...fullyConnected(group));
   }
   return edges;
 }
@@ -133,6 +160,8 @@ export function buildTopologyEdges(
   switch (topology) {
     case "fully_connected":
       return fullyConnected(nodeIds);
+    case "grouped":
+      return grouped(nodeIds);
     case "chain":
       return chain(nodeIds);
     case "ring":
@@ -159,7 +188,7 @@ export function buildTopologyEdges(
 /**
  * Produce the `structure` / `pattern` metadata that accompanies an applied
  * topology so the artifact's `interaction.topology` stays schema-valid
- * (structured_network requires a pattern; fully_connected forbids one).
+ * (structured_network requires a pattern; fully_connected / grouped forbid one).
  */
 export function topologyMeta(topology: ApplicableTopology): {
   structure: TopologyArtifact["structure"];
@@ -168,11 +197,14 @@ export function topologyMeta(topology: ApplicableTopology): {
   if (topology === "fully_connected") {
     return { structure: "fully_connected", pattern: null };
   }
+  if (topology === "grouped") {
+    return { structure: "grouped", pattern: null };
+  }
   return { structure: "structured_network", pattern: topology };
 }
 
 /** Human-readable label for a topology key, for toolbar menus. */
-export function topologyLabel(topology: ApplicableTopology): string {
+export function topologyLabel(topology: string): string {
   return topology
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
+import { Gavel, Scale } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
@@ -15,6 +16,17 @@ import { Disclosure, Field, FieldGroup, TaxonomySelect, findError } from "./fiel
  * invalid JSON surfaces a client-side error (Req 7.3) and is not committed to
  * the artifact until it parses.
  */
+/**
+ * Agreement authority/resolution work *together with* the topology and the
+ * judge/debater roles and prompts — e.g. judge-based authority only does
+ * something if a judge node exists and its prompt tells it how to decide. This
+ * hint flags that these selections are not independent switches.
+ */
+const EMERGENT_HINT =
+  "Works together with your topology and the judge/debater roles & prompts. " +
+  "For example, 'judge-based' authority requires a judge node whose prompt " +
+  "defines how it decides; the effective behaviour emerges from those choices.";
+
 export function AgreementPanel() {
   const { getSubDimension, isUnderDevelopment } = useTaxonomy();
   const artifact = useDesignerStore((s) => s.artifact);
@@ -37,6 +49,8 @@ export function AgreementPanel() {
         title="Agreement"
         description="How the debate resolves to a final output."
         tone="structured"
+        icon={Gavel}
+        hint={EMERGENT_HINT}
       >
         {authoritySub ? (
           <TaxonomySelect
@@ -50,6 +64,8 @@ export function AgreementPanel() {
             isUnderDevelopment={isUnderDevelopment}
             id="agr-authority"
             error={findError(errors, "agreement.authority")}
+            icon={Gavel}
+            hint={EMERGENT_HINT}
           />
         ) : null}
         {resolutionSub ? (
@@ -64,6 +80,8 @@ export function AgreementPanel() {
             isUnderDevelopment={isUnderDevelopment}
             id="agr-resolution"
             error={findError(errors, "agreement.resolution")}
+            icon={Scale}
+            hint={EMERGENT_HINT}
           />
         ) : null}
       </FieldGroup>

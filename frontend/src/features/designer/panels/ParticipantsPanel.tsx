@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+﻿import { useMemo, useState } from "react";
+import { Boxes, Plus, Sparkles, Tag, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaxonomy } from "@/taxonomy/TaxonomyContext";
@@ -11,7 +10,6 @@ import type { ParticipantNodeArtifact } from "../artifact";
 import { useDesignerStore } from "../designerStore";
 import { useProvidersQuery } from "../useProviders";
 import {
-  Disclosure,
   Field,
   FieldGroup,
   TaxonomyMultiSelect,
@@ -22,24 +20,22 @@ import {
 const CUSTOM_ROLE_PREFIX = "custom:";
 
 /**
- * Participants-dimension inspector for the selected node (Req 1.*, 6.3).
+ * Per-node Participants inspector for the selected node (Req 1.*, 6.3).
  *
- * Renders, all data-driven from the taxonomy catalog:
+ * Renders, all data-driven from the taxonomy catalog, the fields that are
+ * genuinely PER-PARTICIPANT:
  *  - roles multi-select incl. custom/user-defined roles (Req 1.5, 1.6)
- *  - persona background/personality/stance free-form fields + a persona-template
- *    picker drawn from `templates.persona_patterns` (Req 1.2, 1.9, 1.10)
+ *  - persona background/personality/stance + a persona-template picker (Req 1.2, 1.9, 1.10)
  *  - base-model binding to a configured provider + model (Req 1.8, 8.6)
- *  - dimension-level heterogeneity / assignment selectors (Req 1.3, 1.4, 1.7)
  *
- * Prompt-designed fields (persona, system prompt) and structured fields
- * (everything else) are visually grouped and labelled (the design's
- * distinction). Advanced options sit behind progressive disclosure (Req 7.2).
+ * The config-level participant settings (persona/base-model heterogeneity,
+ * assignment) are NOT here — they live in `ParticipantsDimensionPanel`, shown
+ * when no node is selected, since they describe the whole participant set.
  */
 export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
   const { getSubDimension, taxonomy, isUnderDevelopment } = useTaxonomy();
   const artifact = useDesignerStore((s) => s.artifact);
   const updateNode = useDesignerStore((s) => s.updateNode);
-  const updateParticipants = useDesignerStore((s) => s.updateParticipants);
   const errors = useDesignerStore((s) => s.validationErrors);
   const providersQuery = useProvidersQuery();
 
@@ -50,13 +46,7 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
 
   const rolesSub = getSubDimension("participants", "roles");
   const personaAttrsSub = getSubDimension("participants", "persona_attributes");
-  const personaHetSub = getSubDimension("participants", "persona_heterogeneity");
-  const personaAssignSub = getSubDimension("participants", "persona_assignment");
   const familySub = getSubDimension("participants", "base_model_family");
-  const baseModelHetSub = getSubDimension(
-    "participants",
-    "base_model_heterogeneity",
-  );
 
   const [customRole, setCustomRole] = useState("");
 
@@ -107,14 +97,13 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Label htmlFor="node-label">Name</Label>
+      <Field label="Name" htmlFor="node-label" icon={Tag}>
         <Input
           id="node-label"
           value={node.label}
           onChange={(e) => updateNode(nodeId, { label: e.target.value })}
         />
-      </div>
+      </Field>
 
       {/* --- Roles (structured, Req 1.5, 1.6) --- */}
       <FieldGroup
@@ -186,6 +175,7 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
         title="Persona"
         description="Free-form, prompt-designed attributes. Start from a pattern, then edit freely."
         tone="prompt"
+        icon={Sparkles}
       >
         <PersonaTemplatePicker
           nodeId={nodeId}
@@ -234,6 +224,7 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
         title="Base model"
         description="Bind this participant to a configured provider and model."
         tone="structured"
+        icon={Boxes}
       >
         <Field
           label="Provider"
@@ -247,7 +238,6 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
               updateNode(nodeId, {
                 base_model: {
                   provider_id: e.target.value || null,
-                  // reset model when provider changes
                   model_key: null,
                 },
               })
@@ -308,49 +298,6 @@ export function ParticipantsPanel({ nodeId }: { nodeId: string }) {
           />
         ) : null}
       </FieldGroup>
-
-      {/* --- Dimension-level options (advanced, Req 1.3, 1.4, 1.7) --- */}
-      <Disclosure summary="Dimension-level options">
-        {personaHetSub ? (
-          <TaxonomySelect
-            sub={personaHetSub}
-            value={artifact.participants.persona_heterogeneity}
-            onChange={(v) =>
-              updateParticipants({
-                persona_heterogeneity: v as "homogeneous" | "heterogeneous",
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="persona-het"
-          />
-        ) : null}
-        {personaAssignSub ? (
-          <TaxonomySelect
-            sub={personaAssignSub}
-            value={artifact.participants.persona_assignment}
-            onChange={(v) =>
-              updateParticipants({
-                persona_assignment: v as "unspecified" | "manual" | "automatic",
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="persona-assign"
-          />
-        ) : null}
-        {baseModelHetSub ? (
-          <TaxonomySelect
-            sub={baseModelHetSub}
-            value={artifact.participants.base_model_heterogeneity}
-            onChange={(v) =>
-              updateParticipants({
-                base_model_heterogeneity: v as "homogeneous" | "heterogeneous",
-              })
-            }
-            isUnderDevelopment={isUnderDevelopment}
-            id="model-het"
-          />
-        ) : null}
-      </Disclosure>
     </div>
   );
 }

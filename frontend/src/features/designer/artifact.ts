@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TypeScript model of the MAD Configuration Artifact (task 8.3).
  *
  * These interfaces mirror the backend Pydantic schema in
@@ -149,10 +149,19 @@ export const TOPOLOGY_PATTERNS: TopologyPattern[] = [
   "bipartite",
 ];
 
-/** All topology choices the toolbar can apply, including fully-connected. */
-export type ApplicableTopology = TopologyPattern | "fully_connected";
+/**
+ * All topology choices the toolbar can apply. "fully_connected" and "grouped"
+ * are topology *structures*; the rest are structured-network *patterns*. The
+ * designer treats them uniformly. Ordered structures-first for the toolbar.
+ */
+export type ApplicableTopology =
+  | "fully_connected"
+  | "grouped"
+  | TopologyPattern;
 
 export const APPLICABLE_TOPOLOGIES: ApplicableTopology[] = [
+  "fully_connected",
+  "grouped",
   "chain",
   "ring",
   "star",
@@ -160,7 +169,6 @@ export const APPLICABLE_TOPOLOGIES: ApplicableTopology[] = [
   "layered",
   "sparse",
   "bipartite",
-  "fully_connected",
 ];
 
 /**

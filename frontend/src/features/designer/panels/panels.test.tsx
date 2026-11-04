@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+﻿import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { AgreementPanel } from "./AgreementPanel";
 import { Inspector } from "./Inspector";
 import { InteractionPanel } from "./InteractionPanel";
 import { ParticipantsPanel } from "./ParticipantsPanel";
+import { ParticipantsDimensionPanel } from "./ParticipantsDimensionPanel";
 import { SAMPLE_PROVIDERS, SAMPLE_TAXONOMY } from "./testFixtures";
 
 /**
@@ -218,10 +219,11 @@ describe("designer dimension panels (taxonomy-driven forms)", () => {
     const user = userEvent.setup();
     renderPanel(<InteractionPanel />);
 
-    const adaptability = await screen.findByLabelText("Topology adaptability");
-    await user.selectOptions(adaptability, "dynamic");
+    // Topology is canvas-driven now; use a non-executable FORMAT value instead.
+    const syntax = await screen.findByLabelText("Format syntax");
+    await user.selectOptions(syntax, "embeddings");
 
-    expect(artifact().interaction.topology.adaptability).toBe("dynamic");
+    expect(artifact().interaction.format?.syntax).toBe("embeddings");
     // The selected non-executable value badges "under development".
     expect(screen.getAllByText(/under development/i).length).toBeGreaterThan(0);
   });
@@ -300,27 +302,22 @@ describe("taxonomy-driven forms — defaults pre-filled (Req 7.1)", () => {
   it("Interaction panel lands on the taxonomy default selections", async () => {
     renderPanel(<InteractionPanel />);
 
-    // Topology adaptability default = "static"; structure default =
-    // "fully_connected"; protocol mechanism = "sequential"; ordering = "fixed".
-    const adaptability = (await screen.findByLabelText(
-      "Topology adaptability",
-    )) as HTMLSelectElement;
-    expect(adaptability.value).toBe("static");
-
-    const structure = screen.getByLabelText(
-      "Topology structure",
-    ) as HTMLSelectElement;
-    expect(structure.value).toBe("fully_connected");
-
-    const mechanism = screen.getByLabelText(
+    // Topology structure/adaptability are now designed on the canvas/toolbar,
+    // not in this form; the panel keeps protocol + format. Protocol mechanism
+    // defaults to "sequential" and ordering to "fixed".
+    const mechanism = (await screen.findByLabelText(
       "Protocol mechanism",
-    ) as HTMLSelectElement;
+    )) as HTMLSelectElement;
     expect(mechanism.value).toBe("sequential");
 
     const ordering = screen.getByLabelText(
       "Protocol ordering",
     ) as HTMLSelectElement;
     expect(ordering.value).toBe("fixed");
+
+    // The topology structure selects are gone (canvas-driven).
+    expect(screen.queryByLabelText("Topology adaptability")).toBeNull();
+    expect(screen.queryByLabelText("Topology structure")).toBeNull();
   });
 
   it("Agreement panel lands on the taxonomy default selections", async () => {
@@ -346,10 +343,23 @@ describe("taxonomy-driven forms — defaults pre-filled (Req 7.1)", () => {
     )) as HTMLSelectElement;
     expect(family.value).toBe("closed_weight");
 
-    // Dimension-level heterogeneity/assignment likewise default.
-    const personaHet = screen.getByLabelText(
+    // Dimension-level heterogeneity is NOT in the per-node panel anymore — it
+    // moved to the config-level ParticipantsDimensionPanel (no selection).
+    expect(screen.queryByLabelText("Persona heterogeneity")).toBeNull();
+  });
+
+  it("dimension-level participant settings default (shown with no node selected, Req 7.1)", async () => {
+    useDesignerStore.getState().setSelection(null);
+    renderPanel(<ParticipantsDimensionPanel />);
+
+    const personaHet = (await screen.findByLabelText(
       "Persona heterogeneity",
-    ) as HTMLSelectElement;
+    )) as HTMLSelectElement;
     expect(personaHet.value).toBe("homogeneous");
+
+    const modelHet = screen.getByLabelText(
+      "Base model heterogeneity",
+    ) as HTMLSelectElement;
+    expect(modelHet.value).toBe("homogeneous");
   });
 });

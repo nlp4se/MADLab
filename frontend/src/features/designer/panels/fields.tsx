@@ -1,5 +1,5 @@
-import { type ReactNode } from "react";
-import { AlertTriangle, ChevronDown, Wrench } from "lucide-react";
+﻿import { type ComponentType, type ReactNode } from "react";
+import { AlertTriangle, ChevronDown, Info, Wrench } from "lucide-react";
 
 import type { FieldError, SubDimensionDTO, ValueDTO } from "@/api";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,32 @@ import { cn } from "@/lib/utils";
  * labels, descriptions/tooltips (Req 7.4), defaults (Req 7.1), and "under
  * development" badges (Req 7.5) come from a single data source and never drift.
  */
+
+/** Minimal icon prop: any lucide-style component taking a className. */
+export type FieldIcon = ComponentType<{ className?: string }>;
+
+/**
+ * An info marker with a hover/focus tooltip. Used to flag properties whose
+ * effective value is shaped by other decisions (topology, roles, prompts) or is
+ * descriptive rather than directly driving execution, so the user understands
+ * the field is not a simple independent switch.
+ */
+export function InfoHint({ text, className }: { text: string; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex cursor-help text-muted-foreground hover:text-foreground",
+        className,
+      )}
+      title={text}
+      tabIndex={0}
+      role="img"
+      aria-label={text}
+    >
+      <Info className="size-3.5" aria-hidden />
+    </span>
+  );
+}
 
 /** A small "under development" badge for a non-executable taxonomy value (Req 7.5). */
 export function UnderDevBadge({ className }: { className?: string }) {
@@ -34,24 +60,31 @@ export function UnderDevBadge({ className }: { className?: string }) {
 /**
  * A labelled group of fields. `tone` optionally marks the group as
  * prompt-designed (free-form persona/system-prompt text) vs. structured
- * (everything else) per the design's distinction.
+ * (everything else) per the design's distinction. `icon` gives the group a
+ * recognizable glyph; `hint` adds an info tooltip next to the title.
  */
 export function FieldGroup({
   title,
   description,
   tone,
+  icon: Icon,
+  hint,
   children,
 }: {
   title: string;
   description?: string;
   tone?: "prompt" | "structured";
+  icon?: FieldIcon;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <section className="space-y-3" data-tone={tone}>
       <div className="space-y-0.5">
         <div className="flex items-center gap-2">
+          {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
           <h4 className="text-sm font-semibold">{title}</h4>
+          {hint ? <InfoHint text={hint} /> : null}
           {tone ? (
             <Badge variant="secondary" className="font-normal">
               {tone === "prompt" ? "Prompt-designed" : "Structured"}
@@ -74,6 +107,8 @@ export function Field({
   htmlFor,
   underDev,
   error,
+  icon: Icon,
+  hint,
   children,
 }: {
   label: string;
@@ -81,14 +116,18 @@ export function Field({
   htmlFor?: string;
   underDev?: boolean;
   error?: string;
+  icon?: FieldIcon;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        {Icon ? <Icon className="size-3.5 text-muted-foreground" /> : null}
         <Label htmlFor={htmlFor} title={description}>
           {label}
         </Label>
+        {hint ? <InfoHint text={hint} /> : null}
         {underDev ? <UnderDevBadge /> : null}
       </div>
       {children}
@@ -108,7 +147,8 @@ export function Field({
  * A single-choice selector rendered from a `single`-selection sub-dimension's
  * values. Each option is tooltipped with its paper-aligned description; the
  * currently-selected value shows an "under development" badge when it is
- * non-executable, and an inline warning explains the gating.
+ * non-executable, and an inline warning explains the gating. `icon` and `hint`
+ * decorate the field label (points 7 and 8 of the designer UX pass).
  */
 export function TaxonomySelect({
   sub,
@@ -117,6 +157,8 @@ export function TaxonomySelect({
   isUnderDevelopment,
   id,
   error,
+  icon,
+  hint,
 }: {
   sub: SubDimensionDTO;
   value: string | undefined;
@@ -124,6 +166,8 @@ export function TaxonomySelect({
   isUnderDevelopment: (key: string) => boolean;
   id?: string;
   error?: string;
+  icon?: FieldIcon;
+  hint?: string;
 }) {
   const selectedKey = value ?? sub.values.find((v) => v.default)?.key;
   const selected = sub.values.find((v) => v.key === selectedKey);
@@ -138,6 +182,8 @@ export function TaxonomySelect({
       htmlFor={id}
       underDev={selectedUnderDev}
       error={error}
+      icon={icon}
+      hint={hint}
     >
       <Select
         id={id}
@@ -175,6 +221,8 @@ export function TaxonomyMultiSelect({
   onToggle,
   isUnderDevelopment,
   extra,
+  icon,
+  hint,
 }: {
   sub: SubDimensionDTO;
   selected: string[];
@@ -182,9 +230,11 @@ export function TaxonomyMultiSelect({
   isUnderDevelopment: (key: string) => boolean;
   /** Extra rows rendered below the catalog values (e.g. custom roles). */
   extra?: ReactNode;
+  icon?: FieldIcon;
+  hint?: string;
 }) {
   return (
-    <Field label={sub.label} description={sub.description}>
+    <Field label={sub.label} description={sub.description} icon={icon} hint={hint}>
       <div className="space-y-1.5">
         {sub.values.map((v: ValueDTO) => {
           const checked = selected.includes(v.key);

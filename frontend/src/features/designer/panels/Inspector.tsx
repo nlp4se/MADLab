@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 import { DIMENSION_THEMES, type DimensionKey } from "@/taxonomy/dimensions";
 import { cn } from "@/lib/utils";
@@ -7,17 +7,20 @@ import { AgreementPanel } from "./AgreementPanel";
 import { EdgePanel } from "./EdgePanel";
 import { InteractionPanel } from "./InteractionPanel";
 import { ParticipantsPanel } from "./ParticipantsPanel";
+import { ParticipantsDimensionPanel } from "./ParticipantsDimensionPanel";
 
 /**
- * The designer inspector (task 8.4, Req 6.3, 6.6).
+ * The designer inspector (Req 6.3, 6.6).
  *
  * Context-sensitive: clicking a node focuses the Participants panel for that
  * participant; selecting an edge focuses the edge props. Three colour-themed
  * dimension tabs (Participants / Interaction / Agreement, Req 6.6) let the user
  * configure the config-level dimensions regardless of canvas selection.
  *
- * Selecting a node/edge auto-switches the active tab to the relevant dimension
- * so the user always knows which dimension they are editing.
+ * With NO node selected the Participants tab shows the *dimension-level*
+ * participant settings (persona/base-model heterogeneity and assignment) — these
+ * are config-wide, not per-node, so editing them must not require selecting a
+ * participant.
  */
 const TABS: DimensionKey[] = ["participants", "interaction", "agreement"];
 
@@ -25,7 +28,6 @@ export function Inspector() {
   const selection = useDesignerStore((s) => s.selection);
   const [activeTab, setActiveTab] = useState<DimensionKey>("participants");
 
-  // Selecting a node/edge pulls the inspector to the relevant dimension tab.
   useEffect(() => {
     if (selection?.kind === "node") setActiveTab("participants");
     else if (selection?.kind === "edge") setActiveTab("interaction");
@@ -72,15 +74,17 @@ export function Inspector() {
   );
 }
 
-/** Participants tab: the selected node's panel, or a dimension-level hint. */
+/**
+ * Participants tab: the selected node's per-node panel, or — when nothing is
+ * selected — the config-level participant-dimension settings (so those are
+ * editable without picking a participant).
+ */
 function ParticipantsTab() {
   const selection = useDesignerStore((s) => s.selection);
   if (selection?.kind === "node") {
     return <ParticipantsPanel nodeId={selection.id} />;
   }
-  return (
-    <EmptyHint text="Select a participant node on the canvas to edit its roles, persona, and base model." />
-  );
+  return <ParticipantsDimensionPanel />;
 }
 
 /** Interaction tab: edge props when an edge is selected, else topology/protocol/format. */
@@ -90,8 +94,4 @@ function InteractionTab() {
     return <EdgePanel edgeId={selection.id} />;
   }
   return <InteractionPanel />;
-}
-
-function EmptyHint({ text }: { text: string }) {
-  return <p className="text-sm text-muted-foreground">{text}</p>;
 }
