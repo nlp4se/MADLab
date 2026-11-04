@@ -187,3 +187,6 @@ backend/mad.db
 # Node.js dependencies (frontend/website)
 node_modules/
 .astro/
+
+# Backend runtime dataset upload storage (MAD_DATASET_STORAGE_PATH default)
+backend/data/
