@@ -37,6 +37,18 @@ function makeSummary(
     },
     created_at: "2024-01-01T12:00:00Z",
     updated_at: "2024-01-01T12:05:00Z",
+    started_at: "2024-01-01T12:00:01+00:00",
+    finished_at: "2024-01-01T12:02:06+00:00",
+    summary: {
+      wall_time_s: 125.4,
+      model_time_s: 98.76,
+      input_tokens: 12345,
+      output_tokens: 678,
+      total_tokens: 13023,
+      cost_usd: 0.0123,
+      calls: 9,
+      instances: { total: 3, completed: 3, failed: 0 },
+    },
     ...overrides,
   };
 }
@@ -106,6 +118,15 @@ function makeInstance(
     ground_truth: "NFR",
     metrics: { correct: true },
     error: null,
+    usage: {
+      input_tokens: 30,
+      output_tokens: 12,
+      total_tokens: 42,
+      cost_usd: 0.0001,
+      model_time_s: 1.0,
+      calls: 2,
+    },
+    duration_s: 1.42,
     ...overrides,
   };
 }
@@ -227,6 +248,38 @@ describe("ExecutionsPage (history list)", () => {
     expect(screen.getByLabelText(/Progress for/i)).toBeInTheDocument();
   });
 
+  it("shows each run's wall time and in/out tokens (task 11.18)", async () => {
+    installFetch({
+      executions: [
+        makeSummary(),
+        // An old run: no timestamps -> no wall time; tokens from transcripts.
+        makeSummary({
+          id: 7,
+          config_name: "Old run",
+          started_at: null,
+          finished_at: null,
+          summary: {
+            ...makeSummary().summary!,
+            wall_time_s: null,
+            input_tokens: 3000,
+            output_tokens: 12,
+          },
+        }),
+      ],
+    });
+    renderList();
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("execution-wall-time")).toHaveLength(2),
+    );
+    const [recent, old] = screen.getAllByTestId("execution-wall-time");
+    expect(recent).toHaveTextContent("2 min 05 s");
+    expect(old).toHaveTextContent("—");
+    const [recentTokens, oldTokens] = screen.getAllByTestId("execution-tokens");
+    expect(recentTokens).toHaveTextContent("12,345 in · 678 out tokens");
+    expect(oldTokens).toHaveTextContent("3,000 in · 12 out tokens");
+  });
+
   it("shows an empty state when there are no runs", async () => {
     installFetch({ executions: [] });
     renderList();
@@ -290,6 +343,25 @@ describe("ExecutionDetailPage (transcript viewer)", () => {
     // Per-class metrics table (Req 11.5).
     expect(screen.getByText("Evaluation metrics")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Precision/i })).toBeInTheDocument();
+  });
+
+  it("shows the run summary bar and per-instance figures (task 11.18)", async () => {
+    installFetch();
+    renderDetail();
+
+    const bar = await screen.findByTestId("run-summary");
+    expect(within(bar).getByText("Wall time")).toBeInTheDocument();
+    expect(screen.getByTestId("run-summary-wall-time")).toHaveTextContent("2 min 05 s");
+    expect(screen.getByTestId("run-summary-model-time")).toHaveTextContent("1 min 39 s");
+    expect(screen.getByTestId("run-summary-input-tokens")).toHaveTextContent("12,345");
+    expect(screen.getByTestId("run-summary-output-tokens")).toHaveTextContent("678");
+    expect(screen.getByTestId("run-summary-cost")).toHaveTextContent("$0.0123");
+    expect(screen.getByTestId("run-summary-calls")).toHaveTextContent("9");
+    expect(within(bar).getByText(/Model time adds up the latency/i)).toBeInTheDocument();
+
+    expect(screen.getByTestId("instance-figures")).toHaveTextContent(
+      "1.4 s · 30 in / 12 out",
+    );
   });
 
   it("surfaces recoverable errors in the transcript (Req 10.6)", async () => {

@@ -587,6 +587,23 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
     context from 11.14, response_format from 11.13) and reproduce it with one real call to the
     configured judge provider. Fix it in the engine/provider layer, with an offline regression test.
   - _Requirements: 3.5, 9.1, 9.5, 11.2_
+
+- [x] 11.18 Run summary: execution time and input/output tokens
+  - Backend: record wall-clock timing. `executions` gains nullable `started_at` / `finished_at`
+    (added on startup via the init_db column migration; bump the schema version); each instance
+    transcript records `duration_s` (wall clock of run_debate, set on success and failure).
+    Execution responses expose an aggregate `summary`: wall time (finished - started, or elapsed
+    so far while running), summed model time (latency), input tokens (prompt), output tokens
+    (completion), cost when reported, model call count, and instance counts. It is computed from
+    the stored transcripts, so older executions get token totals too (wall time null when the
+    timestamps are missing).
+  - Frontend: a summary bar on the execution detail page (wall time, model time, input tokens,
+    output tokens, cost, calls), per-instance figures in each instance header, and time + tokens
+    columns in the executions list. Numbers formatted (thousands separators, s/min). Live
+    updates while running.
+  - Tests: aggregation with mixed/missing usage, timing on success and failure, migration on an
+    old DB, API shape, UI rendering incl. missing values.
+  - _Requirements: 9.4, 11.1, 11.2_
 ```
 
 ---

@@ -38,6 +38,7 @@ import { debateRoundCount } from "./chatTimeline";
 import { DebateChatDialog } from "./DebateChatDialog";
 import { DeleteExecutionDialog } from "./DeleteExecutionDialog";
 import { InstanceFailedAlert } from "./InstanceFailedAlert";
+import { InstanceFigures, RunSummaryBar } from "./RunSummaryBar";
 import {
   aggregateMetrics,
   formatPercent,
@@ -231,6 +232,10 @@ export function ExecutionDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Execution time + token usage; refreshed by the detail polling
+              while the run is in flight (task 11.18). */}
+          <RunSummaryBar summary={execution.summary} />
 
           {/* Configuration snapshot (immutable, Req 11.3). */}
           <ConfigSnapshotCard snapshot={execution.config_snapshot} />
@@ -482,6 +487,7 @@ function InstanceAccordion({
             <span className="truncate font-normal text-muted-foreground">
               {instancePreview(instance)}
             </span>
+            <InstanceFigures instance={instance} />
             {hasError ? (
               <Badge variant="destructive" className="shrink-0 gap-1">
                 <AlertTriangle className="size-3" aria-hidden />

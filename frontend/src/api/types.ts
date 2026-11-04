@@ -344,6 +344,44 @@ export interface ExecutionSummary {
   metrics: JsonObject | null;
   created_at: string | null;
   updated_at: string | null;
+  /** When the job started / reached a terminal status (UTC); null on old runs. */
+  started_at?: string | null;
+  finished_at?: string | null;
+  /** Execution time + token usage of the run (task 11.18). */
+  summary?: RunSummary | null;
+}
+
+/** Token / time totals over every model call of one instance (task 11.18). */
+export interface InstanceUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number | null;
+  /** Summed per-call model latency in seconds; null when none reported. */
+  model_time_s: number | null;
+  calls: number;
+}
+
+/** Instance counts: completed succeeded, failed errored, the rest pending. */
+export interface InstanceCounts {
+  total: number;
+  completed: number;
+  failed: number;
+}
+
+/**
+ * Run summary (task 11.18). `wall_time_s` is the elapsed clock time
+ * (null without a start timestamp); `model_time_s` sums every call's latency.
+ */
+export interface RunSummary {
+  wall_time_s: number | null;
+  model_time_s: number | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number | null;
+  calls: number;
+  instances: InstanceCounts;
 }
 
 export interface ExecutionInstanceResult {
@@ -354,6 +392,10 @@ export interface ExecutionInstanceResult {
   ground_truth: string | null;
   metrics: JsonObject | null;
   error: string | null;
+  /** Token totals of the instance's model calls; null without a transcript. */
+  usage?: InstanceUsage | null;
+  /** Wall-clock seconds of the debate; null when not recorded. */
+  duration_s?: number | null;
 }
 
 export interface ExecutionDetail extends ExecutionSummary {

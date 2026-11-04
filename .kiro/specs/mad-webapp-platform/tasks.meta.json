@@ -1173,6 +1173,28 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793816289352
       }
+    ],
+    "11.18 Run summary: execution time and input/output tokens": [
+      {
+        "executionId": "490a0466-57a5-41b9-beae-7c45d7da567d",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793821755429
+      },
+      {
+        "executionId": "490a0466-57a5-41b9-beae-7c45d7da567d",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793821759342
+      },
+      {
+        "executionId": "a714a1bc-b5e5-4935-b087-df26a16c1210",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793826711475
+      },
+      {
+        "executionId": "a714a1bc-b5e5-4935-b087-df26a16c1210",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793827022223
+      }
     ]
   }
 }

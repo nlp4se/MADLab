@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Download,
   Loader2,
   MoreVertical,
@@ -30,6 +31,8 @@ import type { ExecutionSummary } from "@/api";
 import { DeleteExecutionDialog } from "./DeleteExecutionDialog";
 import {
   aggregateMetrics,
+  formatCount,
+  formatDuration,
   formatPercent,
   formatTimestamp,
   StatusBadge,
@@ -151,6 +154,7 @@ function ExecutionRow({
 }) {
   const metrics = aggregateMetrics(execution.metrics);
   const running = isRunningStatus(execution.status);
+  const summary = execution.summary;
   const title = execution.config_name ?? `Execution #${execution.id}`;
 
   return (
@@ -255,6 +259,28 @@ function ExecutionRow({
               {m.label.toLowerCase()}
             </span>
           ))}
+          {/* Time + tokens (task 11.18); live via the list polling. */}
+          <span
+            className="inline-flex items-center gap-1"
+            data-testid="execution-wall-time"
+            title="Wall time"
+          >
+            <Clock className="size-3.5" aria-hidden />
+            <span className="sr-only">Wall time </span>
+            <span className="font-medium tabular-nums text-foreground">
+              {formatDuration(summary?.wall_time_s)}
+            </span>
+          </span>
+          <span data-testid="execution-tokens" title="Input / output tokens">
+            <span className="font-medium tabular-nums text-foreground">
+              {formatCount(summary?.input_tokens)}
+            </span>{" "}
+            in ·{" "}
+            <span className="font-medium tabular-nums text-foreground">
+              {formatCount(summary?.output_tokens)}
+            </span>{" "}
+            out tokens
+          </span>
         </div>
       </CardContent>
     </Card>

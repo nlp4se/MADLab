@@ -39,6 +39,48 @@ export function formatPercent(fraction: number): string {
   return `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
 }
 
+/** Placeholder for a figure that is unknown (old runs, nothing reported). */
+export const MISSING = "—";
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Format a duration in seconds: `850 ms`, `12.3 s`, `2 min 05 s`,
+ * `1 h 02 min`; `—` when missing (task 11.18).
+ */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (!isFiniteNumber(seconds) || seconds < 0) return MISSING;
+  const ms = Math.round(seconds * 1000);
+  if (ms < 1000) return `${ms} ms`;
+  const tenths = Math.round(seconds * 10) / 10;
+  if (tenths < 60) return `${tenths.toFixed(1)} s`;
+  const whole = Math.round(seconds);
+  if (whole < 3600) {
+    return `${Math.floor(whole / 60)} min ${pad2(whole % 60)} s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return `${Math.floor(minutes / 60)} h ${pad2(minutes % 60)} min`;
+}
+
+const COUNT_FORMAT = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0,
+});
+
+/** Format a count with thousands separators (`12,345`); `—` when missing. */
+export function formatCount(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? COUNT_FORMAT.format(value) : MISSING;
+}
+
+/** Format a USD cost (`$0.0123`, `$1.25`); `—` when no call reported one. */
+export function formatCost(usd: number | null | undefined): string {
+  if (!isFiniteNumber(usd)) return MISSING;
+  return `$${usd.toFixed(Math.abs(usd) < 1 ? 4 : 2)}`;
+}
+
 export interface AggregateMetric {
   label: string;
   value: string;
