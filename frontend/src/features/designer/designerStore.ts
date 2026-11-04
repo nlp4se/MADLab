@@ -47,6 +47,7 @@ import {
   reconcileLayout,
   seedLayout,
   type LayoutMap,
+  type NodeSizeMap,
   type XYPosition,
 } from "./layout";
 import {
@@ -223,8 +224,13 @@ export interface DesignerState {
   deleteCanvasEdge: (edgeId: string) => void;
   /** Apply a topology template, regenerating E over the current nodes (Req 6.5). */
   applyTopology: (topology: ApplicableTopology) => void;
-  /** Re-run auto-layout over all nodes (also clears every edge bend). */
-  relayout: () => void;
+  /**
+   * Re-run the flow-aware auto layout over the whole canvas (participants AND
+   * Start/End, task 11.8), replacing every edge bend with the ones the layout
+   * needs to route edges around node boxes. `sizes` are React Flow's measured
+   * node sizes when available (else rendering-matched estimates).
+   */
+  relayout: (sizes?: NodeSizeMap | null) => void;
   /** Set the current selection. */
   setSelection: (selection: Selection) => void;
   /** Mark the artifact as saved (clears `dirty` and validation errors). */
@@ -279,15 +285,19 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
 
   loadArtifact: (configId, raw) => {
     const artifact = normalizeArtifact(raw);
-    const nodeIds = artifact.participants.nodes.map((n) => n.id);
-    // Seed from the persisted presentation-only layout; only participants
-    // without a stored position are auto-placed (Start/End fall back to their
-    // computed default in the canvas projection).
+    // Seed from the persisted presentation-only layout. Without one (no `ui`,
+    // new config) the whole canvas is auto-laid-out, Start/End and bends
+    // included; a stored layout is kept and only participants without a
+    // position are placed in free space (Start/End without a stored position
+    // fall back to their computed default in the canvas projection).
+    const seeded = seedLayout(artifact, artifact.ui?.nodes, SENTINEL_IDS, {
+      bends: sanitizeBends(artifact.ui?.edges),
+    });
     set({
       configId,
       artifact,
-      layout: seedLayout(nodeIds, artifact.ui?.nodes, SENTINEL_IDS),
-      edgeBends: pruneBends(artifact, sanitizeBends(artifact.ui?.edges)),
+      layout: seeded.layout,
+      edgeBends: seeded.bends ?? pruneBends(artifact, sanitizeBends(artifact.ui?.edges)),
       selection: null,
       dirty: false,
       validationErrors: [],
@@ -296,23 +306,23 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
 
   setArtifactFromAssistant: (raw) => {
     const artifact = normalizeArtifact(raw);
-    const nodeIds = artifact.participants.nodes.map((n) => n.id);
     const state = get();
     // The live canvas wins for ids that carry over (the proposal's `ui`, if
     // any, may be a stale echo of the last save); a proposal `ui` only fills
-    // ids the canvas doesn't know; anything else is auto-placed.
+    // ids the canvas doesn't know; anything else is placed in free space near
+    // its neighbours (or, if no position is known at all, auto-laid-out).
     const proposalUi = artifact.ui ?? null;
+    const mergedBends = { ...sanitizeBends(proposalUi?.edges), ...state.edgeBends };
+    const seeded = seedLayout(
+      artifact,
+      { ...(proposalUi?.nodes ?? {}), ...state.layout },
+      SENTINEL_IDS,
+      { bends: mergedBends },
+    );
     set({
       artifact,
-      layout: seedLayout(
-        nodeIds,
-        { ...(proposalUi?.nodes ?? {}), ...state.layout },
-        SENTINEL_IDS,
-      ),
-      edgeBends: pruneBends(artifact, {
-        ...sanitizeBends(proposalUi?.edges),
-        ...state.edgeBends,
-      }),
+      layout: seeded.layout,
+      edgeBends: seeded.bends ?? pruneBends(artifact, mergedBends),
       selection: null,
       // An applied proposal is an unsaved edit — the user reviews then Saves.
       dirty: true,
@@ -346,10 +356,8 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
       participants: { ...state.artifact.participants, nodes },
       interaction,
     };
-    const layout = reconcileLayout(
-      nodes.map((n) => n.id),
-      state.layout,
-    );
+    // Free space near the new node's neighbours; nothing else moves.
+    const layout = reconcileLayout(artifact, state.layout, { bends: state.edgeBends });
     set({ artifact, layout, dirty: true });
     return id;
   },
@@ -716,11 +724,14 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     set({ artifact, edgeBends: pruneBends(artifact, state.edgeBends), dirty: true });
   },
 
-  relayout: () => {
+  relayout: (sizes) => {
     const state = get();
     if (!state.artifact) return;
-    const nodeIds = state.artifact.participants.nodes.map((n) => n.id);
-    set({ layout: autoLayout(nodeIds), edgeBends: {}, dirty: true });
+    // `sizes` may be anything when wired straight to an event handler; the
+    // layout only uses entries that look like a measured size.
+    const measured = sizes && typeof sizes === "object" ? sizes : null;
+    const { positions, bends } = autoLayout(state.artifact, measured);
+    set({ layout: positions, edgeBends: bends, dirty: true });
   },
 
   setSelection: (selection) => set({ selection }),

@@ -26,7 +26,7 @@ import {
   entryConnectorId,
   exitConnectorId,
 } from "./ioNodes";
-import type { LayoutMap, XYPosition } from "./layout";
+import { startEndFallback, type LayoutMap } from "./layout";
 import type { ParticipantNodeData } from "./ParticipantNode";
 import { conflictNodeIds } from "./participantScope";
 import { turnNumbers } from "./interactionScope";
@@ -138,23 +138,6 @@ export {
   parseConnectorId,
 } from "./ioNodes";
 
-/** Bounding box of the participant layout, for placing Start/End on the sides. */
-function layoutBounds(nodeIds: string[], layout: LayoutMap) {
-  const pts = nodeIds
-    .map((id) => layout[id])
-    .filter((p): p is XYPosition => p != null);
-  if (pts.length === 0) {
-    return { minX: 0, maxX: 360, centerY: 260 };
-  }
-  const xs = pts.map((p) => p.x);
-  const ys = pts.map((p) => p.y);
-  return {
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-    centerY: (Math.min(...ys) + Math.max(...ys)) / 2,
-  };
-}
-
 /**
  * The synthetic Start and End nodes, positioned to the left/right of the
  * participant cloud. Non-selectable and non-deletable (draggable is harmless);
@@ -167,16 +150,16 @@ export function toStartEndNodes(
 ): FlowNode<StartEndNodeData>[] {
   const nodes = artifact.participants.nodes;
   if (nodes.length === 0) return [];
-  const { minX, maxX, centerY } = layoutBounds(
+  // Auto layout (task 11.8) and user drags write Start/End positions into the
+  // UI-only layout map (keyed by the sentinel ids); on Save they persist in
+  // the presentation-only `artifact.ui.nodes` (never in the graph itself). A
+  // stored layout without them falls back to flanking the participant cloud.
+  const fallback = startEndFallback(
     nodes.map((n) => n.id),
     layout,
   );
-  // Default placement flanks the participant cloud; a user drag is remembered
-  // in the UI-only layout map (keyed by the sentinel ids) and takes precedence,
-  // so Start/End can be repositioned like any node. On Save it is persisted in
-  // the presentation-only `artifact.ui.nodes` (never in the graph itself).
-  const startPos = layout[START_NODE_ID] ?? { x: minX - 180, y: centerY };
-  const endPos = layout[END_NODE_ID] ?? { x: maxX + 220, y: centerY };
+  const startPos = layout[START_NODE_ID] ?? fallback.start;
+  const endPos = layout[END_NODE_ID] ?? fallback.end;
   const common = {
     selectable: false as const,
     deletable: false as const,

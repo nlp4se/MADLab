@@ -63,8 +63,7 @@ function fullyConnectedArtifact() {
   });
 }
 
-const layoutOf = (a: ReturnType<typeof chainArtifact>) =>
-  autoLayout(a.participants.nodes.map((n) => n.id));
+const layoutOf = (a: ReturnType<typeof chainArtifact>) => autoLayout(a).positions;
 
 /* --------------------------------- tests --------------------------------- */
 

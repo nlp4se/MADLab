@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { edgeId, useDesignerStore, withUiLayout } from "./designerStore";
 import { toFlowEdges, toFlowNodes, toStartEndEdges } from "./flowGraph";
-import { autoLayout } from "./layout";
+import { normalizeArtifact } from "./artifact";
+import { autoLayout, boxesOverlap, nodeSizes } from "./layout";
 
 /* ------------------------------- fixtures -------------------------------- */
 
@@ -75,8 +76,11 @@ describe("designer store — canvas<->artifact sync (Req 6.8)", () => {
     expect(s.configId).toBe(42);
     expect(s.artifact?.participants.nodes).toHaveLength(3);
     expect(s.artifact?.interaction.topology.edges).toHaveLength(2);
-    // Every node got a layout position (UI-only side-channel).
-    expect(Object.keys(s.layout)).toHaveLength(3);
+    // Every node got a layout position (UI-only side-channel): without a
+    // stored layout, auto layout places the participants AND Start/End.
+    expect(Object.keys(s.layout).sort()).toEqual(
+      ["__end__", "__start__", "functional", "judge", "non-functional"],
+    );
     expect(s.layout["judge"]).toBeDefined();
     // A fresh load is clean.
     expect(s.dirty).toBe(false);
@@ -381,7 +385,9 @@ describe("designer store — edge bends", () => {
 
     current().setEdgeBend("non-functional->judge", { x: 9, y: 9 });
     current().relayout();
-    expect(current().edgeBends).toEqual({});
+    // Every user bend is replaced by the layout's own routing bends.
+    expect(current().edgeBends).toEqual(autoLayout(current().artifact!).bends);
+    expect(current().edgeBends["non-functional->judge"]).toBeUndefined();
   });
 
   it("flags reciprocal pairs so they render as two separated curves", () => {
@@ -413,10 +419,19 @@ describe("designer store — persisted layout (artifact.ui)", () => {
       }),
     );
     const s = current();
-    const auto = autoLayout(["functional", "non-functional", "judge"]);
+    // A stored layout is never re-laid-out: stored positions are kept, the
+    // missing participants are placed in free space (no box overlap).
     expect(s.layout.functional).toEqual({ x: 11, y: 22 });
-    expect(s.layout["non-functional"]).toEqual(auto["non-functional"]);
-    expect(s.layout.judge).toEqual(auto.judge);
+    expect(s.layout["non-functional"]).toBeDefined();
+    expect(s.layout.judge).toBeDefined();
+    const sizes = nodeSizes(s.artifact!);
+    const box = (id: string) => ({ ...s.layout[id], ...sizes[id] });
+    const placed = ["functional", "non-functional", "judge", "__start__"];
+    for (let i = 0; i < placed.length; i += 1) {
+      for (let j = i + 1; j < placed.length; j += 1) {
+        expect(boxesOverlap(box(placed[i]), box(placed[j]))).toBe(false);
+      }
+    }
     expect(s.layout.__start__).toEqual({ x: -300, y: 5 });
     // End has no stored position -> canvas falls back to its computed default.
     expect(s.layout.__end__).toBeUndefined();
@@ -425,10 +440,38 @@ describe("designer store — persisted layout (artifact.ui)", () => {
     expect(s.dirty).toBe(false);
   });
 
-  it("loadArtifact without ui (or ui: null) auto-lays-out as before", () => {
+  it("loadArtifact without ui (or ui: null) auto-lays-out the whole canvas", () => {
     useDesignerStore.getState().loadArtifact(7, withUi(null));
-    expect(current().layout).toEqual(autoLayout(["functional", "non-functional", "judge"]));
-    expect(current().edgeBends).toEqual({});
+    const auto = autoLayout(normalizeArtifact(withUi(null)));
+    expect(current().layout).toEqual(auto.positions);
+    expect(current().layout.__start__).toBeDefined();
+    expect(current().layout.__end__).toBeDefined();
+    expect(current().edgeBends).toEqual(auto.bends);
+  });
+
+  it("relayout writes Start/End too and replaces every bend", () => {
+    current().moveNode("__start__", { x: 5000, y: 5000 });
+    current().setEdgeBend("functional->judge", { x: 400, y: 400 });
+    current().relayout();
+    const auto = autoLayout(current().artifact!);
+    expect(current().layout).toEqual(auto.positions);
+    expect(current().edgeBends).toEqual(auto.bends);
+    expect(current().dirty).toBe(true);
+  });
+
+  it("addNode places the new node in free space without moving existing nodes", () => {
+    useDesignerStore.getState().loadArtifact(7, withUi(null));
+    const before = { ...current().layout };
+    const id = current().addNode();
+    const s = current();
+    for (const [key, p] of Object.entries(before)) expect(s.layout[key]).toEqual(p);
+    const sizes = nodeSizes(s.artifact!);
+    const mine = { ...s.layout[id], ...sizes[id] };
+    for (const other of Object.keys(before)) {
+      expect(boxesOverlap(mine, { ...s.layout[other], ...sizes[other] })).toBe(false);
+    }
+    // The following tests build on the plain fixture.
+    useDesignerStore.getState().loadArtifact(7, withUi(null));
   });
 
   it("withUiLayout (used by Save) writes the current layout + bends for existing ids only", () => {
@@ -443,8 +486,9 @@ describe("designer store — persisted layout (artifact.ui)", () => {
 
     const s = current();
     const saved = withUiLayout(s.artifact!, s.layout, s.edgeBends);
+    // Start/End come from the initial auto layout (task 11.8) or a drag.
     expect(Object.keys(saved.ui!.nodes!).sort()).toEqual(
-      ["__end__", "functional", "judge", "non-functional"].sort(),
+      ["__end__", "__start__", "functional", "judge", "non-functional"].sort(),
     );
     expect(saved.ui!.nodes!.judge).toEqual({ x: 500, y: 600 });
     expect(saved.ui!.nodes!.__end__).toEqual({ x: 900, y: 10 });

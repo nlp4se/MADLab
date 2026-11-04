@@ -163,3 +163,61 @@ export function floatingEdgeGeometry(
     `Q ${control.x},${control.y} ${target.x},${target.y}`;
   return { source, target, control, knob, origin, path };
 }
+
+/* ------------------- curve vs. box tests (task 11.8 layout) ------------------- */
+
+/** `segments + 1` points along the rendered quadratic curve, endpoints included. */
+export function sampleEdgeCurve(
+  geo: Pick<FloatingEdgeGeometry, "source" | "control" | "target">,
+  segments = 40,
+): XYPosition[] {
+  const pts: XYPosition[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    pts.push(quadraticPoint(geo.source, geo.control, geo.target, i / segments));
+  }
+  return pts;
+}
+
+/** True when segment p-q intersects the rect grown by `margin` on every side. */
+export function segmentHitsRect(
+  p: XYPosition,
+  q: XYPosition,
+  rect: Rect,
+  margin = 0,
+): boolean {
+  const minX = rect.x - margin;
+  const maxX = rect.x + rect.width + margin;
+  const minY = rect.y - margin;
+  const maxY = rect.y + rect.height + margin;
+  // Liang-Barsky clipping of the segment against the (open) box.
+  let t0 = 0;
+  let t1 = 1;
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  // den < 0: the segment enters across this boundary; den > 0: it leaves.
+  const clip = (den: number, num: number): boolean => {
+    if (den === 0) return num >= 0; // parallel: inside this slab or not at all
+    const t = num / den;
+    if (den < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  };
+  if (!clip(-dx, p.x - minX)) return false;
+  if (!clip(dx, maxX - p.x)) return false;
+  if (!clip(-dy, p.y - minY)) return false;
+  if (!clip(dy, maxY - p.y)) return false;
+  return t1 > t0;
+}
+
+/** True when the sampled curve `points` enters `rect` (grown by `margin`). */
+export function polylineHitsRect(points: XYPosition[], rect: Rect, margin = 0): boolean {
+  for (let i = 0; i < points.length - 1; i += 1) {
+    if (segmentHitsRect(points[i], points[i + 1], rect, margin)) return true;
+  }
+  return false;
+}

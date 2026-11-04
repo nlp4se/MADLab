@@ -13,6 +13,7 @@ import ReactFlow, {
   type Node as FlowNode,
   type NodeChange,
   type OnConnectStartParams,
+  useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -37,6 +38,7 @@ import { resolveConnection } from "./ioNodes";
 import { AssistantChat } from "./AssistantChat";
 import { CanvasContextMenu, useCanvasContextMenu } from "./EdgeContextMenu";
 import { useDesignerStore, withUiLayout } from "./designerStore";
+import type { NodeSizeMap } from "./layout";
 import {
   catalogTopologyLabel,
   confirmApplyTopology,
@@ -143,6 +145,17 @@ function DesignerCanvas({ configId }: { configId: number }) {
   const deleteCanvasEdge = useDesignerStore((s) => s.deleteCanvasEdge);
   const applyTopology = useDesignerStore((s) => s.applyTopology);
   const relayout = useDesignerStore((s) => s.relayout);
+  const { getNodes, fitView } = useReactFlow();
+  // Auto layout with React Flow's measured node sizes (task 11.8), then bring
+  // the whole new arrangement into view.
+  const handleAutoLayout = useCallback(() => {
+    const sizes: NodeSizeMap = {};
+    for (const n of getNodes()) {
+      if (n.width && n.height) sizes[n.id] = { width: n.width, height: n.height };
+    }
+    relayout(sizes);
+    requestAnimationFrame(() => fitView({ padding: 0.15, duration: 200 }));
+  }, [getNodes, fitView, relayout]);
   const setSelection = useDesignerStore((s) => s.setSelection);
   const markSaved = useDesignerStore((s) => s.markSaved);
   const setValidationErrors = useDesignerStore((s) => s.setValidationErrors);
@@ -323,7 +336,7 @@ function DesignerCanvas({ configId }: { configId: number }) {
       <DesignerToolbar
         onAddNode={() => addNode()}
         onApplyTopology={handleApplyTopology}
-        onAutoLayout={relayout}
+        onAutoLayout={handleAutoLayout}
         onDeleteSelection={() => {
           if (selection?.kind === "node") removeNode(selection.id);
           else if (selection?.kind === "edge") deleteCanvasEdge(selection.id);

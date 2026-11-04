@@ -993,6 +993,23 @@
         "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
         "timestamp": 1793796216062
       }
+    ],
+    "11.8 Overlap-avoiding, flow-aware auto layout": [
+      {
+        "executionId": "59a8b7e5-3721-4c7c-b561-0db3fb6919dd",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793796546670
+      },
+      {
+        "executionId": "59a8b7e5-3721-4c7c-b561-0db3fb6919dd",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793796549892
+      },
+      {
+        "executionId": "59a8b7e5-3721-4c7c-b561-0db3fb6919dd",
+        "chatSessionId": "sess_f105eee9-4a74-4b62-9d2a-347ab78db214",
+        "timestamp": 1793798011860
+      }
     ]
   }
 }

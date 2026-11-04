@@ -9,6 +9,9 @@ import {
   reciprocalOffset,
   rectBoundaryPoint,
   rectCenter,
+  sampleEdgeCurve,
+  polylineHitsRect,
+  segmentHitsRect,
   type Rect,
 } from "./edgeGeometry";
 import { resolveConnection } from "./ioNodes";
@@ -140,5 +143,27 @@ describe("resolveConnection — direction-agnostic handles", () => {
     expect(resolveConnection("__end__", "a")).toEqual({ kind: "exit", nodeId: "a" });
     expect(resolveConnection("__start__", "__end__")).toBeNull();
     expect(resolveConnection("__end__", "__start__")).toBeNull();
+  });
+});
+
+describe("edgeGeometry — curve vs box hit tests (task 11.8)", () => {
+  it("segmentHitsRect detects crossing, containment and misses (with margin)", () => {
+    const box: Rect = { x: 100, y: 100, width: 100, height: 50 };
+    expect(segmentHitsRect({ x: 0, y: 125 }, { x: 300, y: 125 }, box)).toBe(true);
+    expect(segmentHitsRect({ x: 120, y: 110 }, { x: 130, y: 120 }, box)).toBe(true);
+    expect(segmentHitsRect({ x: 0, y: 90 }, { x: 300, y: 90 }, box)).toBe(false);
+    expect(segmentHitsRect({ x: 0, y: 95 }, { x: 300, y: 95 }, box, 10)).toBe(true);
+    // Diagonal passing just outside a corner.
+    expect(segmentHitsRect({ x: 0, y: 190 }, { x: 90, y: 100 }, box)).toBe(false);
+  });
+
+  it("a bent curve can route around a box that blocks the straight line", () => {
+    const s: Rect = { x: 0, y: 0, width: 80, height: 40 };
+    const t: Rect = { x: 600, y: 0, width: 80, height: 40 };
+    const blocker: Rect = { x: 280, y: -30, width: 120, height: 100 };
+    const straight = sampleEdgeCurve(floatingEdgeGeometry(s, t, null));
+    expect(polylineHitsRect(straight, blocker)).toBe(true);
+    const bent = sampleEdgeCurve(floatingEdgeGeometry(s, t, { x: 0, y: -160 }));
+    expect(polylineHitsRect(bent, blocker)).toBe(false);
   });
 });

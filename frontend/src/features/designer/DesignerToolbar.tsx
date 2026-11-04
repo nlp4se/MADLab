@@ -134,7 +134,7 @@ export function DesignerToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button size="sm" variant="outline" onClick={onAutoLayout}>
+      <Button size="sm" variant="outline" onClick={() => onAutoLayout()}>
         <LayoutGrid className="size-4" aria-hidden />
         Auto-layout
       </Button>

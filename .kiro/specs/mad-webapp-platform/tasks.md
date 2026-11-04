@@ -433,6 +433,27 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   - Tests: visibility per mechanism/ordering, turn order + badges, phases editor and pruning, drift
     detection, compatibility matrix, judge notices and Add judge.
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 6.3, 6.5, 7.4_
+
+- [x] 11.8 Overlap-avoiding, flow-aware auto layout
+  - Replace the fixed declaration-order circle with a dependency-free layered layout over the full
+    canvas graph INCLUDING Start/End: Start in the first layer, End in the last, ranks from the
+    Start -> ... -> End flow (cycles broken; strongly connected components such as fully connected
+    debaters share a rank and are arranged as a compact cluster so intra-cluster edges do not run
+    through each other's nodes), barycenter ordering sweeps to reduce edge crossings, judges and
+    summarizers placed by their connections (typically next to End).
+  - Spacing from real node sizes (React Flow measured width/height when available, else defaults),
+    with a minimum gap so no two node boxes overlap.
+  - Edge clearance pass: for any edge whose rendered curve passes through a non-endpoint node box,
+    set its bend offset (the 11.4 bend model) so it routes around the box; reciprocal pairs keep
+    their separation. Auto layout writes positions for Start/End too and replaces all bends.
+  - Triggers: the toolbar Auto layout button, loading a config without stored ui, and new configs.
+    Adding a node places it in free space near its neighbours without moving existing nodes.
+    Stored layouts are never re-laid-out automatically.
+  - Tests: for every offered topology template x 2..10 participants (+ judge and summarizer
+    variants): no node-box overlaps, no edge curve crossing a non-endpoint node box, Start left of
+    every participant and End right of every participant, deterministic output; crossing count not
+    worse than the old circle on chain/star/tree; new-node placement does not overlap.
+  - _Requirements: 6.1, 6.2, 6.4, 6.8_
 ```
 
 ---
