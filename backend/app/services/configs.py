@@ -46,6 +46,7 @@ from app.schemas.configs import (
     FieldError,
     ValidationResponse,
 )
+from app.services.providers import normalize_base_model_families
 from mad.errors import ConfigValidationError
 from mad.taxonomy import templates
 from mad.taxonomy.schema import MADConfig
@@ -216,7 +217,12 @@ def create_config(
 
 
 def _persist_new(session: Session, model: MADConfig) -> ConfigDetail:
-    """Persist a validated :class:`MADConfig` as a new row and return its detail."""
+    """Persist a validated :class:`MADConfig` as a new row and return its detail.
+
+    Bound nodes' ``base_model.family`` is first derived from their provider
+    (task 11.9), so create/copy/import never persist a stale family.
+    """
+    normalize_base_model_families(session, model)
     dump = export_config(model)
     row = Configuration(
         name=model.name,
@@ -241,7 +247,7 @@ def update_config(
     row = _get_row(session, config_id)
 
     if artifact is not None:
-        model = _validate_artifact(artifact)
+        model = normalize_base_model_families(session, _validate_artifact(artifact))
         # Keep name/description in sync: explicit args win, else the artifact's.
         model.name = name if name is not None else model.name
         if description is not None:

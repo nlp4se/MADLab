@@ -60,7 +60,7 @@ from app.schemas.executions import (
 )
 from app.services.configs import ConfigNotFound
 from app.services.datasets import DatasetNotFound
-from app.services.providers import build_registry
+from app.services.providers import build_registry, normalize_base_model_families
 from mad.errors import MADError, TemplateError, UnderDevelopment
 from mad.input.template import validate_template
 from mad.providers.registry import ProviderRegistry
@@ -292,7 +292,10 @@ def create_execution(
         _validate_batch_input(session, config, batch)
         input_ref = batch
 
-    # Immutable snapshot of the exact artifact used (Req 11.3).
+    # Immutable snapshot of the exact artifact used (Req 11.3), with each bound
+    # node's base-model family derived from its provider as it is at launch
+    # (task 11.9) so the record reflects the backends actually used.
+    normalize_base_model_families(session, config)
     snapshot = config.model_dump(mode="json")
 
     row = Execution(

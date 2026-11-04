@@ -25,7 +25,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import Engine, create_engine, event, select
+from sqlalchemy import Engine, create_engine, event, inspect, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
@@ -33,8 +33,18 @@ from app.db.models import SchemaMeta
 
 # Persistence schema version. Bumped when the table layout changes; recorded in
 # the ``schema_meta`` table by :func:`init_db`.
-SCHEMA_VERSION = "1"
+#   1 - initial layout.
+#   2 - ``providers.family`` (nullable) added (task 11.9).
+SCHEMA_VERSION = "2"
 _SCHEMA_VERSION_KEY = "schema_version"
+
+# Columns added after the initial layout. ``create_all`` never alters existing
+# tables, so :func:`init_db` adds any missing ones with an idempotent
+# ``ALTER TABLE ... ADD COLUMN`` (all are nullable, so existing rows stay valid).
+# Entries: (table, column, SQL column type).
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("providers", "family", "VARCHAR(32)"),
+)
 
 # Default database URL (relative on-disk SQLite file in the CWD).
 DEFAULT_DATABASE_URL = "sqlite:///mad.db"
@@ -109,16 +119,41 @@ def configure(engine: Engine) -> sessionmaker[Session]:
     return _SessionLocal
 
 
-def init_db(engine: Engine | None = None) -> str:
-    """Create all tables and stamp the schema version marker.
+def _add_missing_columns(engine: Engine) -> list[str]:
+    """Add any :data:`_ADDED_COLUMNS` missing from existing tables.
 
-    Idempotent: ``create_all`` only creates missing tables, and the schema
-    version marker is inserted once (left untouched on subsequent calls). This
-    is the lightweight "migration" the design calls for on startup. Returns the
-    schema version recorded in the database.
+    Idempotent: a column already present is skipped, so this is safe on every
+    startup and on fresh databases (where ``create_all`` already created it).
+    Returns the ``table.column`` names actually added.
+    """
+    added: list[str] = []
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table, column, sql_type in _ADDED_COLUMNS:
+            if table not in tables:
+                continue
+            present = {c["name"] for c in inspector.get_columns(table)}
+            if column in present:
+                continue
+            conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sql_type}'))
+            added.append(f"{table}.{column}")
+    return added
+
+
+def init_db(engine: Engine | None = None) -> str:
+    """Create all tables, add missing columns, and stamp the schema version.
+
+    Idempotent: ``create_all`` only creates missing tables, columns introduced
+    after the initial layout are added to existing tables when absent
+    (:func:`_add_missing_columns`), and the schema version marker is inserted
+    once and raised to :data:`SCHEMA_VERSION` when it records an older version.
+    This is the lightweight "migration" the design calls for on startup.
+    Returns the schema version recorded in the database.
     """
     engine = engine or get_engine()
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
 
     maker = sessionmaker(bind=engine, future=True)
     with maker() as session:
@@ -128,8 +163,19 @@ def init_db(engine: Engine | None = None) -> str:
             session.commit()
             recorded = SCHEMA_VERSION
         else:
+            if _version_lt(existing.value, SCHEMA_VERSION):
+                existing.value = SCHEMA_VERSION
+                session.commit()
             recorded = existing.value
     return recorded
+
+
+def _version_lt(recorded: str, current: str) -> bool:
+    """Whether a recorded integer schema version is older than ``current``."""
+    try:
+        return int(recorded) < int(current)
+    except (TypeError, ValueError):
+        return False
 
 
 def get_schema_version(engine: Engine | None = None) -> str | None:

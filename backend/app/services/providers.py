@@ -41,6 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Provider
+from app.provider_family import check_family_for_kind, effective_family
 from app.schemas.providers import (
     ProviderCreateRequest,
     ProviderResponse,
@@ -48,8 +49,9 @@ from app.schemas.providers import (
     ProviderUpdateRequest,
 )
 from app.security.crypto import CredentialError, decrypt_api_key, encrypt_api_key
-from mad.errors import ProviderError
+from mad.errors import ConfigValidationError, ProviderError
 from mad.providers.registry import ProviderConfig, ProviderRegistry
+from mad.taxonomy.schema import MADConfig
 
 # A factory that builds the engine registry used for connectivity tests. The
 # default builds a plain :class:`ProviderRegistry` (which lazily constructs a
@@ -74,6 +76,14 @@ class ProviderNotFound(ProviderError):
     Subclasses :class:`~mad.errors.ProviderError` so it flows through the domain
     error machinery; the router translates it to a 404 explicitly rather than
     relying on the default 502 mapping.
+    """
+
+
+class InvalidProviderFamily(ConfigValidationError):
+    """A requested family contradicts the provider's (fixed) kind (task 11.9).
+
+    Subclasses :class:`~mad.errors.ConfigValidationError` so the global handler
+    maps it to 422 with the structured envelope.
     """
 
 
@@ -104,6 +114,7 @@ def _to_response(row: Provider) -> ProviderResponse:
         kind=row.kind,
         base_url=row.base_url,
         models=list(row.models or []),
+        family=effective_family(row.kind, row.family),
         has_key=row.has_key,
         created_at=_iso(row.created_at),
         updated_at=_iso(row.updated_at),
@@ -156,6 +167,9 @@ def create_provider(session: Session, body: ProviderCreateRequest) -> ProviderRe
         base_url=body.base_url,
         models=list(body.models or []),
         encrypted_api_key=_encrypt_optional(body.api_key),
+        # Already validated against the kind by the request model; a fixed
+        # kind's (matching) value is stored as NULL since it is derived.
+        family=check_family_for_kind(body.kind, body.family),
     )
     session.add(row)
     session.flush()
@@ -181,10 +195,28 @@ def update_provider(
     """
     row = _get_row(session, provider_id)
 
+    # Family (task 11.9), validated against the *resulting* kind before any
+    # field is touched so a rejected request leaves the row unchanged:
+    # * present (value or null) -> validate + store (null = kind default);
+    # * omitted and the kind changes -> reset to the new kind's default;
+    # * omitted, same kind -> keep the stored choice.
+    new_kind = body.kind if body.kind is not None else row.kind
+    kind_changed = new_kind != row.kind
+    if "family" in body.model_fields_set:
+        try:
+            new_family = check_family_for_kind(new_kind, body.family)
+        except ValueError as exc:
+            raise InvalidProviderFamily(str(exc)) from exc
+    elif kind_changed:
+        new_family = None
+    else:
+        new_family = row.family
+
     if body.name is not None:
         row.name = body.name
     if body.kind is not None:
         row.kind = body.kind
+    row.family = new_family
     if "base_url" in body.model_fields_set:
         row.base_url = body.base_url
     if body.models is not None:
@@ -197,6 +229,29 @@ def update_provider(
 
     session.flush()
     return _to_response(row)
+
+
+def provider_families(session: Session) -> dict[str, str]:
+    """Map each stored provider's id (as a string, the artifact binding) to its family."""
+    rows = session.scalars(select(Provider)).all()
+    return {str(row.id): effective_family(row.kind, row.family) for row in rows}
+
+
+def normalize_base_model_families(session: Session, config: MADConfig) -> MADConfig:
+    """Set every bound node's ``base_model.family`` from its provider (task 11.9).
+
+    The family is a property of the provider, not a free parameter, so on save/
+    import/snapshot each participant bound to an existing provider gets that
+    provider's effective family. Unbound nodes (or nodes bound to a provider id
+    that no longer exists) keep their stored value. Mutates and returns
+    ``config``.
+    """
+    families = provider_families(session)
+    for node in config.participants.nodes:
+        family = families.get(node.base_model.provider_id or "")
+        if family is not None:
+            node.base_model.family = family  # type: ignore[assignment]
+    return config
 
 
 def delete_provider(session: Session, provider_id: int) -> None:
@@ -305,7 +360,10 @@ def test_provider(
 
 __all__ = [
     "ProviderNotFound",
+    "InvalidProviderFamily",
     "RegistryFactory",
+    "provider_families",
+    "normalize_base_model_families",
     "list_providers",
     "get_provider",
     "create_provider",

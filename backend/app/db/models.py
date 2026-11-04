@@ -89,6 +89,10 @@ class Provider(Base, TimestampMixin):
     # key has been configured yet (e.g. a local Ollama endpoint).
     encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     models: Mapped[JSONList] = mapped_column(JSON, nullable=False, default=list)
+    # Base-model family (open_weight / closed_weight) chosen for *mixed* kinds
+    # (mistral, openai_compatible). NULL = the kind's default; ignored for fixed
+    # kinds. The effective value is derived by app.provider_family (task 11.9).
+    family: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     @property
     def has_key(self) -> bool:

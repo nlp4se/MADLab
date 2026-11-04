@@ -36,9 +36,13 @@ transport edge with a clear error.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.provider_family import check_family_for_kind
+
+FamilyValue = Literal["open_weight", "closed_weight"]
 
 # Supported provider kinds (Req 8.2): closed-weight providers plus open-weight /
 # local / generic OpenAI-compatible backends. Kept in sync with the kinds the
@@ -75,6 +79,12 @@ class ProviderResponse(BaseModel):
         default_factory=list,
         description="Available model keys for this provider (Req 8.3).",
     )
+    family: FamilyValue = Field(
+        description=(
+            "Effective base-model family: fixed by kind, or the stored choice "
+            "(else the kind default) for mixed kinds (mistral, openai_compatible)."
+        ),
+    )
     has_key: bool = Field(
         description="Whether an API key is configured (the only key info exposed).",
     )
@@ -103,6 +113,14 @@ class ProviderCreateRequest(BaseModel):
         default=None,
         description="Write-only API key; encrypted at rest, never returned (Req 8.4).",
     )
+    family: Optional[FamilyValue] = Field(
+        default=None,
+        description=(
+            "Base-model family; selectable only for mixed kinds (mistral, "
+            "openai_compatible). For fixed kinds a matching value is a no-op and "
+            "a contradicting one is rejected (422). Omit to use the kind default."
+        ),
+    )
 
     @field_validator("kind")
     @classmethod
@@ -114,6 +132,12 @@ class ProviderCreateRequest(BaseModel):
                 f"Unsupported provider kind {value!r}. Supported kinds: {supported}."
             )
         return value
+
+    @model_validator(mode="after")
+    def _family_matches_kind(self) -> "ProviderCreateRequest":
+        """Reject a family that contradicts a fixed kind (task 11.9)."""
+        check_family_for_kind(self.kind, self.family)
+        return self
 
 
 class ProviderUpdateRequest(BaseModel):
@@ -139,6 +163,14 @@ class ProviderUpdateRequest(BaseModel):
         description=(
             "Write-only: omit to keep the existing key, send a new key to "
             "replace it, or send null to clear it (Req 8.4)."
+        ),
+    )
+    family: Optional[FamilyValue] = Field(
+        default=None,
+        description=(
+            "Base-model family for mixed kinds. Omit to keep it (or re-derive "
+            "when the kind changes), send null to reset to the kind default. "
+            "Validated against the resulting kind (422 on contradiction)."
         ),
     )
 

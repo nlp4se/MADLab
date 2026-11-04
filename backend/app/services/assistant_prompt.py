@@ -101,7 +101,8 @@ _SCHEMA_SKELETON: dict[str, Any] = {
                 "base_model": {
                     "provider_id": None,
                     "model_key": None,
-                    "family": "closed_weight|open_weight",
+                    # No "family": it is derived from the bound provider, never
+                    # chosen (task 11.9; see _KEY_RULES).
                     "temperature": 0.0,
                     "params": {},
                 },
@@ -200,12 +201,15 @@ Key rules a MAD designer must respect (enforce these so the artifact validates):
     `debater` role has the SAME persona (judges/summarizers may differ). If the
     debaters need distinct personas, use `heterogeneous`.
   - `base_model_heterogeneity` `homogeneous` = EVERY node has the same
-    `provider_id` / `model_key` / `family`. Different models per node require
+    `provider_id` / `model_key`. Different models per node require
     `heterogeneous`.
   - `system_prompt` is per node and independent of these settings.
 - `base_model.provider_id` / `model_key` may be left null at design time; the
   user binds a concrete provider + model later in the designer. Only set them if
   the user explicitly names a provider/model.
+- `base_model.family` (open/closed weight) is DERIVED from the bound provider
+  by the designer and backend; it is not a parameter. Never choose or change
+  it: omit it on new nodes and leave existing values as they are.
 - Metadata signals, under-development values, and memory modes other than
   `short_term` are configurable but gate execution; prefer executable values
   unless the user asks otherwise.
