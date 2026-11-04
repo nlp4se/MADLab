@@ -85,6 +85,10 @@ def transcript_to_dict(transcript: Transcript) -> dict[str, Any]:
         "decision": decision_to_dict(transcript.decision),
         "errors": [error_to_dict(e) for e in transcript.errors],
         "notes": list(transcript.notes),
+        # Successful model calls folded into ``usage`` and the wall-clock
+        # duration of the debate (task 11.18).
+        "calls": transcript.calls,
+        "duration_s": transcript.duration_s,
     }
 
 

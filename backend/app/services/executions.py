@@ -37,10 +37,12 @@ deterministically and offline against a mock provider registry.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.db.models import (
     Configuration,
@@ -57,8 +59,16 @@ from app.schemas.executions import (
     ExecutionDetail,
     ExecutionInstanceResult,
     ExecutionSummary,
+    InstanceUsage,
 )
 from app.services.configs import ConfigNotFound
+from app.services.execution_summary import (
+    ACTIVE_STATUSES,
+    instance_duration_from_transcript,
+    instance_usage_from_parts,
+    instance_usage_from_transcript,
+    summarize_run,
+)
 from app.services.datasets import DatasetNotFound
 from app.services.providers import build_registry, normalize_base_model_families
 from mad.errors import MADError, TemplateError, UnderDevelopment
@@ -104,35 +114,81 @@ def _get_row(session: Session, execution_id: int) -> Execution:
     return row
 
 
-def _counts(row: Execution) -> tuple[int, int, int]:
-    """Return ``(instance_count, completed_count, error_count)`` for a row.
+def _iso_utc(value: Optional[datetime]) -> Optional[str]:
+    """Render a UTC run timestamp as ISO-8601 with an explicit offset.
 
-    ``completed_count`` counts persisted instances (each is written only once
-    its debate finished, ok or errored); ``error_count`` is the subset carrying
-    an isolated error (Req 10.6).
+    SQLite drops the offset on read, so naive values are stamped as UTC to keep
+    the client from reading them as local time.
     """
-    instances = row.instances
-    completed = len(instances)
-    errors = sum(1 for inst in instances if inst.error is not None)
-    return completed, completed, errors
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
 
 
-def _to_summary(row: Execution) -> ExecutionSummary:
-    instance_count, completed, errors = _counts(row)
-    return ExecutionSummary(
-        id=row.id,
-        config_id=row.config_id,
-        config_name=(row.config.name if row.config is not None else None),
-        input_mode=row.input_mode,
-        status=row.status,
-        progress=row.progress,
-        instance_count=instance_count,
-        completed_count=completed,
-        error_count=errors,
-        metrics=row.metrics,
-        created_at=_iso(row.created_at),
-        updated_at=_iso(row.updated_at),
-    )
+# One persisted instance as the run summary sees it: (failed, usage or None).
+_InstanceFigures = tuple[bool, Optional[InstanceUsage]]
+
+
+def _expected_total(session: Session, row: Execution) -> Optional[int]:
+    """How many instances an *active* run covers, before all are persisted.
+
+    Single runs have one instance; batch runs cover the dataset rows (capped by
+    the optional ``limit``). ``None`` for terminal runs (their persisted
+    instances are the total) or when the dataset is gone.
+    """
+    if row.status not in ACTIVE_STATUSES:
+        return None
+    if row.input_mode == InputMode.SINGLE.value:
+        return 1
+    ref = row.input_ref or {}
+    dataset_id = ref.get("dataset_id")
+    dataset = session.get(DatasetRow, dataset_id) if dataset_id is not None else None
+    if dataset is None:
+        return None
+    total = dataset.row_count
+    limit = ref.get("limit")
+    if isinstance(limit, int) and limit > 0:
+        total = min(total, limit)
+    return total
+
+
+def _base_fields(
+    session: Session, row: Execution, figures: list[_InstanceFigures]
+) -> dict[str, Any]:
+    """The fields shared by the list and detail shapes.
+
+    ``instance_count`` / ``completed_count`` count persisted instances (each is
+    written only once its debate finished, ok or errored); ``error_count`` is
+    the subset carrying an isolated error (Req 10.6). ``summary`` is the run's
+    execution time + token usage (task 11.18).
+    """
+    persisted = len(figures)
+    errors = sum(1 for failed, _usage in figures if failed)
+    return {
+        "id": row.id,
+        "config_id": row.config_id,
+        "config_name": (row.config.name if row.config is not None else None),
+        "input_mode": row.input_mode,
+        "status": row.status,
+        "progress": row.progress,
+        "instance_count": persisted,
+        "completed_count": persisted,
+        "error_count": errors,
+        "metrics": row.metrics,
+        "created_at": _iso(row.created_at),
+        "updated_at": _iso(row.updated_at),
+        "started_at": _iso_utc(row.started_at),
+        "finished_at": _iso_utc(row.finished_at),
+        "summary": summarize_run(
+            status=row.status,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            instances=figures,
+            expected_total=_expected_total(session, row),
+        ),
+    }
 
 
 def _instance_to_result(inst: ExecutionInstance) -> ExecutionInstanceResult:
@@ -144,28 +200,82 @@ def _instance_to_result(inst: ExecutionInstance) -> ExecutionInstanceResult:
         ground_truth=inst.ground_truth,
         metrics=inst.metrics,
         error=inst.error,
+        usage=instance_usage_from_transcript(inst.transcript),
+        duration_s=instance_duration_from_transcript(inst.transcript),
     )
 
 
-def _to_detail(row: Execution) -> ExecutionDetail:
-    instance_count, completed, errors = _counts(row)
+def _to_detail(session: Session, row: Execution) -> ExecutionDetail:
+    results = [_instance_to_result(inst) for inst in row.instances]
+    figures = [(r.error is not None, r.usage) for r in results]
     return ExecutionDetail(
-        id=row.id,
-        config_id=row.config_id,
-        config_name=(row.config.name if row.config is not None else None),
-        input_mode=row.input_mode,
-        status=row.status,
-        progress=row.progress,
-        instance_count=instance_count,
-        completed_count=completed,
-        error_count=errors,
-        metrics=row.metrics,
-        created_at=_iso(row.created_at),
-        updated_at=_iso(row.updated_at),
+        **_base_fields(session, row, figures),
         config_snapshot=dict(row.config_snapshot or {}),
         input_ref=dict(row.input_ref or {}),
-        instances=[_instance_to_result(inst) for inst in row.instances],
+        instances=results,
     )
+
+
+def _list_figures(
+    session: Session, execution_ids: list[int]
+) -> dict[int, list[_InstanceFigures]]:
+    """Per-instance ``(failed, usage)`` for many executions, in one query.
+
+    The list never needs the transcripts themselves, only their usage roll-up
+    and call count. On SQLite (the app's datastore, Req 14.3) those parts are
+    extracted in SQL (``json_extract``), so a poll of the history list never
+    moves the (potentially large) transcript blobs into Python. Other dialects
+    fall back to loading the transcripts.
+    """
+    out: dict[int, list[_InstanceFigures]] = {eid: [] for eid in execution_ids}
+    if not execution_ids:
+        return out
+    inst = ExecutionInstance
+    failed = inst.error.is_not(None)
+    where = inst.execution_id.in_(execution_ids)
+    order = (inst.execution_id, inst.instance_index)
+
+    if session.get_bind().dialect.name == "sqlite":
+        stmt = (
+            select(
+                inst.execution_id,
+                failed,
+                func.json_type(inst.transcript),
+                func.json_extract(inst.transcript, "$.usage"),
+                func.json_extract(inst.transcript, "$.calls"),
+                func.json_array_length(inst.transcript, "$.messages"),
+            )
+            .where(where)
+            .order_by(*order)
+        )
+        for eid, errored, kind, usage_json, calls, n_messages in session.execute(stmt):
+            usage: Optional[InstanceUsage] = None
+            if kind == "object":
+                usage = instance_usage_from_parts(
+                    usage=_loads_object(usage_json),
+                    calls=calls,
+                    message_count=n_messages,
+                )
+            out[eid].append((bool(errored), usage))
+        return out
+
+    stmt = select(inst.execution_id, failed, inst.transcript).where(where).order_by(*order)
+    for eid, errored, transcript in session.execute(stmt):  # pragma: no cover
+        out[eid].append((bool(errored), instance_usage_from_transcript(transcript)))
+    return out
+
+
+def _loads_object(value: Any) -> Optional[dict[str, Any]]:
+    """Decode a ``json_extract`` object result (JSON text), or ``None``."""
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +430,7 @@ def create_execution(
 
     # Re-read so the response reflects any synchronous launch outcome.
     session.expire_all()
-    return _to_detail(_get_row(session, execution_id))
+    return _to_detail(session, _get_row(session, execution_id))
 
 
 # ---------------------------------------------------------------------------
@@ -329,16 +439,27 @@ def create_execution(
 
 
 def list_executions(session: Session) -> list[ExecutionSummary]:
-    """Return all executions as summary rows (Req 11.1), newest first."""
+    """Return all executions as summary rows (Req 11.1), newest first.
+
+    Instance counts and the run summary come from one query over the instance
+    table that reads only the transcripts' usage parts (:func:`_list_figures`),
+    so the list does not load per-instance records or transcripts.
+    """
     rows = session.scalars(
-        select(Execution).order_by(Execution.id.desc())
+        select(Execution)
+        .options(selectinload(Execution.config))
+        .order_by(Execution.id.desc())
     ).all()
-    return [_to_summary(row) for row in rows]
+    figures = _list_figures(session, [row.id for row in rows])
+    return [
+        ExecutionSummary(**_base_fields(session, row, figures[row.id]))
+        for row in rows
+    ]
 
 
 def get_execution(session: Session, execution_id: int) -> ExecutionDetail:
     """Return the full execution record incl. per-instance results (Req 11.2)."""
-    return _to_detail(_get_row(session, execution_id))
+    return _to_detail(session, _get_row(session, execution_id))
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +476,7 @@ def delete_execution(session: Session, execution_id: int) -> None:
 
 def export_execution(session: Session, execution_id: int) -> dict[str, Any]:
     """Return the full results payload for an execution as a JSON dict (Req 11.4)."""
-    detail = _to_detail(_get_row(session, execution_id))
+    detail = _to_detail(session, _get_row(session, execution_id))
     return detail.model_dump(mode="json")
 
 

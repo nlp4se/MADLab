@@ -131,6 +131,11 @@ class Transcript:
         errors: Recoverable :class:`TranscriptError` breadcrumbs (Req 9.5).
         notes: Human-readable diagnostics bubbled up from the format layer
             (e.g. a summarized→verbatim fallback) and the orchestrator.
+        calls: Number of successful model calls folded into :attr:`usage`
+            (every recorded message plus calls that produce no message, such
+            as summarizer compressions). Failed attempts are not counted.
+        duration_s: Wall-clock seconds the debate took, set by the caller that
+            timed ``run_debate`` (the job runner); ``None`` when not timed.
     """
 
     config_id: str
@@ -143,14 +148,26 @@ class Transcript:
     usage: Usage = field(default_factory=Usage)
     errors: list[TranscriptError] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    calls: int = 0
+    duration_s: Optional[float] = None
 
     # -- recording helpers (used by the orchestrator) ----------------------
 
     def add_message(self, message: AgentMessage) -> AgentMessage:
         """Append ``message`` and fold its usage into the aggregate total."""
         self.messages.append(message)
-        self._accumulate_usage(message.usage)
+        self.add_usage(message.usage)
         return message
+
+    def add_usage(self, usage: Usage) -> None:
+        """Count one successful model call and fold its usage into the total.
+
+        :meth:`add_message` calls this for every recorded turn; the
+        orchestrator calls it directly for calls that record no message
+        (summarizer compressions), so the totals cover every model call.
+        """
+        self.calls += 1
+        self._accumulate_usage(usage)
 
     def add_error(self, error: TranscriptError) -> TranscriptError:
         """Record a recoverable per-call failure (Req 9.5)."""

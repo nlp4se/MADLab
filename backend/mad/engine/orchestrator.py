@@ -679,6 +679,9 @@ def _make_summarizer(
         except _CallFailed:
             # Degrade to a trivial concatenation rather than abort the run.
             return "\n".join(m.content for m in messages)
+        # A summary is not a debate turn (no AgentMessage), but its tokens and
+        # latency still count towards the run's usage (task 11.18).
+        transcript.add_usage(response.usage)
         return response.text
 
     return summarize

@@ -26,9 +26,11 @@ portable.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
+    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -188,6 +190,15 @@ class Execution(Base, TimestampMixin):
     # Fraction complete in [0.0, 1.0] for progress reporting (Req 10.5).
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     metrics: Mapped[JSONDict | None] = mapped_column(JSON, nullable=True)
+    # Wall-clock run window (UTC), set by the job runner when it picks the
+    # execution up and when it reaches a terminal status (task 11.18). NULL
+    # for executions recorded before schema version 3, and while queued.
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     config: Mapped["Configuration | None"] = relationship(
         back_populates="executions"

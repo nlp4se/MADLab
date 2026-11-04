@@ -89,12 +89,71 @@ class ExecutionCreateRequest(BaseModel):
         return self
 
 
+class InstanceUsage(BaseModel):
+    """Token / time totals over every model call of one instance (task 11.18).
+
+    Summed from the instance transcript's usage roll-up. ``cost_usd`` and
+    ``model_time_s`` are ``None`` when no call reported them.
+    """
+
+    input_tokens: int = Field(default=0, description="Prompt tokens.")
+    output_tokens: int = Field(default=0, description="Completion tokens.")
+    total_tokens: int = Field(default=0, description="Total tokens as reported.")
+    cost_usd: Optional[float] = Field(
+        default=None, description="Summed cost, when any call reported one."
+    )
+    model_time_s: Optional[float] = Field(
+        default=None, description="Summed per-call model latency (seconds)."
+    )
+    calls: int = Field(default=0, description="Successful model calls.")
+
+
+class InstanceCounts(BaseModel):
+    """Instance counts of a run (task 11.18).
+
+    ``total`` is the number of instances the run covers (known up front for
+    running executions); ``completed`` succeeded, ``failed`` errored, and the
+    remainder is still pending.
+    """
+
+    total: int = 0
+    completed: int = 0
+    failed: int = 0
+
+
+class RunSummary(BaseModel):
+    """Execution time + token usage of a run (task 11.18, Req 9.4, 11.1).
+
+    Computed from the stored per-instance transcripts, so executions recorded
+    before the run timestamps existed still get token totals.
+
+    * ``wall_time_s`` — ``finished_at - started_at``, or the elapsed time so
+      far while running; ``None`` without a ``started_at``.
+    * ``model_time_s`` — the summed latency of every model call. Calls of
+      concurrent instances overlap, so it can exceed the wall time; overhead
+      outside model calls makes it lower.
+    * token totals and ``calls`` cover every model call (debater turns, the
+      judge, summarizer compressions); ``cost_usd`` is ``None`` when no call
+      reported a cost.
+    """
+
+    wall_time_s: Optional[float] = None
+    model_time_s: Optional[float] = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: Optional[float] = None
+    calls: int = 0
+    instances: InstanceCounts = Field(default_factory=InstanceCounts)
+
+
 class ExecutionSummary(BaseModel):
     """The execution list/read shape (Req 11.1).
 
     Carries lifecycle status, progress fraction, timestamps, and the aggregate
     summary metrics so the history list can render status + metrics without
-    loading every per-instance record.
+    loading every per-instance record. ``summary`` holds the run's execution
+    time and token usage (task 11.18).
     """
 
     id: int
@@ -117,10 +176,24 @@ class ExecutionSummary(BaseModel):
     )
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    started_at: Optional[str] = Field(
+        default=None, description="When the job started running (UTC)."
+    )
+    finished_at: Optional[str] = Field(
+        default=None, description="When the job reached a terminal status (UTC)."
+    )
+    summary: RunSummary = Field(
+        default_factory=RunSummary,
+        description="Execution time and token usage of the run (task 11.18).",
+    )
 
 
 class ExecutionInstanceResult(BaseModel):
-    """One per-instance debate record (Req 11.2)."""
+    """One per-instance debate record (Req 11.2).
+
+    ``usage`` / ``duration_s`` surface the transcript's token totals and the
+    debate's wall-clock time (task 11.18); ``None`` without a transcript.
+    """
 
     instance_index: int
     resolved_input: dict[str, Any] = Field(default_factory=dict)
@@ -129,6 +202,8 @@ class ExecutionInstanceResult(BaseModel):
     ground_truth: Optional[str] = None
     metrics: Optional[dict[str, Any]] = None
     error: Optional[str] = None
+    usage: Optional[InstanceUsage] = None
+    duration_s: Optional[float] = None
 
 
 class ExecutionDetail(ExecutionSummary):
@@ -155,6 +230,9 @@ class ExecutionDeleteResponse(BaseModel):
 __all__ = [
     "BatchInput",
     "ExecutionCreateRequest",
+    "InstanceUsage",
+    "InstanceCounts",
+    "RunSummary",
     "ExecutionSummary",
     "ExecutionInstanceResult",
     "ExecutionDetail",

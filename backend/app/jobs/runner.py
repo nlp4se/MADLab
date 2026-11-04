@@ -39,7 +39,9 @@ synchronously in tests" seam so background jobs finish deterministically.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -119,16 +121,24 @@ async def run_execution_async(
         execution error is recorded on the row's metrics payload.
     """
     factory = session_factory or get_sessionmaker()
+    # The job starts now: the run's wall-clock window opens here (task 11.18).
+    started_at = _utcnow()
 
     # Phase 1: load the snapshot + materialise the instance list. A failure here
     # (bad snapshot, dataset gone, mapping mismatch) marks the whole run failed.
     try:
         config, instances = _prepare(factory, execution_id)
     except Exception as exc:  # noqa: BLE001 - surface as a failed run, not a crash.
-        _mark_failed_to_prepare(factory, execution_id, exc)
+        _mark_failed_to_prepare(factory, execution_id, exc, started_at=started_at)
         return ExecutionStatus.FAILED.value
 
-    _set_status(factory, execution_id, ExecutionStatus.RUNNING, progress=0.0)
+    _set_status(
+        factory,
+        execution_id,
+        ExecutionStatus.RUNNING,
+        progress=0.0,
+        started_at=started_at,
+    )
 
     total = len(instances)
     if total == 0:
@@ -291,21 +301,30 @@ def _execute_instance(
         kwargs["retry_policy"] = retry_policy
     if sleep is not None:
         kwargs["sleep"] = sleep
+    # Wall clock of the debate, recorded on the transcript on success and on
+    # the partial transcript on failure (task 11.18).
+    start = time.perf_counter()
     try:
         transcript = run_debate(config, resolved.instance, registry, **kwargs)
     except Exception as exc:  # noqa: BLE001 - isolate: record + continue.
+        elapsed = time.perf_counter() - start
         # Keep the partial transcript the engine attached (messages, errors,
         # notes recorded before the failure), so the cause is not lost
         # (task 11.17).
         partial = getattr(exc, "transcript", None)
+        if isinstance(partial, Transcript):
+            partial.duration_s = elapsed
+        else:
+            partial = None
         return _InstanceOutcome(
             index=resolved.index,
             instance=resolved.instance,
             ground_truth=resolved.ground_truth,
-            transcript=partial if isinstance(partial, Transcript) else None,
+            transcript=partial,
             error=f"{type(exc).__name__}: {exc}",
             output_schema=config.agreement.output_schema,
         )
+    transcript.duration_s = time.perf_counter() - start
     return _InstanceOutcome(
         index=resolved.index,
         instance=resolved.instance,
@@ -369,8 +388,9 @@ def _set_status(
     status: ExecutionStatus,
     *,
     progress: Optional[float] = None,
+    started_at: Optional[datetime] = None,
 ) -> None:
-    """Set an execution's status (and optionally its progress)."""
+    """Set an execution's status (and optionally its progress / start time)."""
     with session_scope(factory) as session:
         row = session.get(Execution, execution_id)
         if row is None:  # pragma: no cover - defensive
@@ -378,6 +398,8 @@ def _set_status(
         row.status = status.value
         if progress is not None:
             row.progress = progress
+        if started_at is not None:
+            row.started_at = started_at
 
 
 def _set_progress(
@@ -408,12 +430,17 @@ def _finalize(
             return
         row.status = status.value
         row.progress = 1.0
+        row.finished_at = _utcnow()
         if metrics is not None:
             row.metrics = metrics
 
 
 def _mark_failed_to_prepare(
-    factory: sessionmaker[Session], execution_id: int, exc: Exception
+    factory: sessionmaker[Session],
+    execution_id: int,
+    exc: Exception,
+    *,
+    started_at: Optional[datetime] = None,
 ) -> None:
     """Mark an execution failed when instance preparation itself failed."""
     with session_scope(factory) as session:
@@ -423,6 +450,14 @@ def _mark_failed_to_prepare(
         row.status = ExecutionStatus.FAILED.value
         row.progress = 1.0
         row.metrics = {"error": f"{type(exc).__name__}: {exc}"}
+        if started_at is not None and row.started_at is None:
+            row.started_at = started_at
+        row.finished_at = _utcnow()
+
+
+def _utcnow() -> datetime:
+    """Timezone-aware UTC now for the run's wall-clock window (task 11.18)."""
+    return datetime.now(timezone.utc)
 
 
 # ---------------------------------------------------------------------------

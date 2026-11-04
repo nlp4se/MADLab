@@ -130,7 +130,7 @@ def test_init_db_adds_family_column_to_old_db(tmp_path):
     _make_old_db(db_path)
     engine = create_engine_for(f"sqlite:///{db_path.as_posix()}")
 
-    assert init_db(engine) == SCHEMA_VERSION == "2"
+    assert init_db(engine) == SCHEMA_VERSION == "3"
     assert "family" in {c["name"] for c in inspect(engine).get_columns("providers")}
     # Idempotent: a second run neither fails nor changes the result.
     assert init_db(engine) == SCHEMA_VERSION

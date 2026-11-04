@@ -35,7 +35,8 @@ from app.db.models import SchemaMeta
 # the ``schema_meta`` table by :func:`init_db`.
 #   1 - initial layout.
 #   2 - ``providers.family`` (nullable) added (task 11.9).
-SCHEMA_VERSION = "2"
+#   3 - ``executions.started_at`` / ``finished_at`` (nullable) added (task 11.18).
+SCHEMA_VERSION = "3"
 _SCHEMA_VERSION_KEY = "schema_version"
 
 # Columns added after the initial layout. ``create_all`` never alters existing
@@ -44,6 +45,8 @@ _SCHEMA_VERSION_KEY = "schema_version"
 # Entries: (table, column, SQL column type).
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("providers", "family", "VARCHAR(32)"),
+    ("executions", "started_at", "DATETIME"),
+    ("executions", "finished_at", "DATETIME"),
 )
 
 # Default database URL (relative on-disk SQLite file in the CWD).
